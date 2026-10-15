@@ -1,0 +1,1156 @@
+// Bu dosya '/system-settings' route'u ile açılır.
+// Admin paneldeki 'Sistem Ayarları' menüsüne tıklanınca bu ekran açılır.
+// Route tanımı: AppRouter.routes içinde '/system-settings': (context) => const SystemSettingsScreen()
+//
+// Eğer başka bir yerde route eklemesi gerekiyorsa, AppRouter ve main.dart dosyalarını kontrol edin.
+import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
+import 'package:zecorner/presentation/widgets/admin-panel/admin_panel_appbar.dart';
+import 'package:zecorner/presentation/widgets/navbar/admin_navbar.dart';
+import 'package:zecorner/presentation/widgets/role-sidebar/role_sidebar.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:zecorner/core/cubit/auth_cubit.dart';
+import 'package:zecorner/infrastructure/featured_contact/featured_contact_repository.dart';
+import 'package:zecorner/infrastructure/contact/contact_api_repository.dart';
+import 'package:zecorner/models/featured_contact/featured_contact_model.dart';
+import 'package:zecorner/models/featured_contact/featured_contact_create_request.dart';
+import 'package:zecorner/presentation/screens/systemsettings/modern_date_range_picker.dart';
+import 'package:zecorner/core/utils/image_utils.dart';
+
+class OneOfTheConsultantsScreen extends StatefulWidget {
+  const OneOfTheConsultantsScreen({super.key});
+
+  @override
+  State<OneOfTheConsultantsScreen> createState() => _OneOfTheConsultantsScreenState();
+}
+
+class _OneOfTheConsultantsScreenState extends State<OneOfTheConsultantsScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  
+  // API Repository
+  late FeaturedContactRepository _repository;
+  
+  // State variables
+  List<FeaturedContactModel> _danismanlar = [];
+  bool _isLoading = false;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _repository = FeaturedContactRepository(dio: Dio());
+    _loadFeaturedContacts();
+  }
+
+  Future<void> _loadFeaturedContacts() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final result = await _repository.getFeaturedContacts();
+
+    result.fold(
+      (failure) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = failure.message;
+        });
+        _showErrorSnackBar(failure.message);
+      },
+      (response) {
+        setState(() {
+          _isLoading = false;
+          _danismanlar = response.featuredContacts;
+        });
+      },
+    );
+  }
+
+  void _showErrorSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green[600],
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _showDeleteConfirmation(BuildContext context, FeaturedContactModel danisman) async {
+    return showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Warning Icon
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.warning_rounded,
+                  color: Colors.red[600],
+                  size: 48,
+                ),
+              ),
+              const SizedBox(height: 20),
+              // Title
+              Text(
+                'Danışmanı Sil',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey[800],
+                ),
+              ),
+              const SizedBox(height: 12),
+              // Message
+              Text(
+                'Bu öne çıkan danışmanı silmek istediğinize emin misiniz?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Colors.grey[600],
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Contact info
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red[100],
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        danisman.typeDescription,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.red[700],
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        danisman.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              // Action Buttons
+              Row(
+                children: [
+                  // İptal
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        'İptal',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  // Sil
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Colors.red[600]!, Colors.red[700]!],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () async {
+                            Navigator.of(context).pop();
+                            final result = await _repository.deleteFeaturedContact(danisman.id);
+                            result.fold(
+                              (failure) {
+                                _showErrorSnackBar(failure.message);
+                              },
+                              (success) {
+                                _showSuccessSnackBar('Danışman başarıyla silindi');
+                                _loadFeaturedContacts();
+                              },
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            child: const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.delete_outline, color: Colors.white, size: 20),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Sil',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      key: _scaffoldKey,
+      backgroundColor: Colors.white,
+      drawer: BlocBuilder<AuthCubit, AuthState>(
+        builder: (context, authState) {
+          // RoleSidebar - API'den gelen role ve permission'lara göre dinamik sidebar
+          return RoleSidebar(currentPage: 'Öne Çıkan Danışmanlar');
+        },
+      ),
+      appBar: AdminPanelAppBar(
+        title: "Öne Çıkan Danışmanlar",
+        onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: Column(
+          children: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red[600],
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (context) => _AddFeaturedContactModal(
+                      repository: _repository,
+                      onSuccess: () {
+                        _showSuccessSnackBar('Danışman başarıyla eklendi');
+                        _loadFeaturedContacts();
+                      },
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.add, color: Colors.white, size: 20),
+                label: const Text("Yeni Öne Çıkan Danışman Ekle",
+                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator(color: Colors.red))
+                  : _errorMessage != null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
+                              const SizedBox(height: 16),
+                              Text(
+                                _errorMessage!,
+                                style: TextStyle(color: Colors.grey[600]),
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 16),
+                              ElevatedButton.icon(
+                                onPressed: _loadFeaturedContacts,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Tekrar Dene'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red[600],
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : _danismanlar.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.inbox, size: 64, color: Colors.grey[400]),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Henüz öne çıkan danışman yok',
+                                    style: TextStyle(color: Colors.grey[600]),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _loadFeaturedContacts,
+                              color: Colors.red[600],
+              child: ListView.builder(
+                itemCount: _danismanlar.length,
+                itemBuilder: (context, i) {
+                                  final danisman = _danismanlar[i];
+                                  final imageUrl = danisman.picutre != null &&
+                                          ImageUtils.isValidS3Id(danisman.picutre!)
+                                      ? ImageUtils.getCoverImageUrl(danisman.picutre!)
+                                      : null;
+
+                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(14.0),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Görsel
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                                child: imageUrl != null
+                                                    ? Image.network(
+                                                        imageUrl,
+                                  width: 60,
+                                  height: 60,
+                                  fit: BoxFit.cover,
+                                                        errorBuilder: (context, error, stackTrace) {
+                                                          return Container(
+                                                            width: 60,
+                                                            height: 60,
+                                                            color: Colors.grey[300],
+                                                            child: Icon(Icons.person,
+                                                                color: Colors.grey[500]),
+                                                          );
+                                                        },
+                                                      )
+                                                    : Container(
+                                                        width: 60,
+                                                        height: 60,
+                                                        color: Colors.grey[300],
+                                                        child: Icon(Icons.person,
+                                                            color: Colors.grey[500]),
+                                                      ),
+                                              ),
+                                              const SizedBox(width: 14),
+                              // Bilgiler
+                              Expanded(
+                                child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                                      danisman.title,
+                                                      style: const TextStyle(
+                                                          fontWeight: FontWeight.bold,
+                                                          fontSize: 16),
+                                                    ),
+                                                    const SizedBox(height: 4),
+                                                    Text("Email: ${danisman.eMail}",
+                                                        style: const TextStyle(fontSize: 13)),
+                                                    Text("Kullanıcı Tipi: ${danisman.typeDescription}",
+                                                        style: TextStyle(
+                                                            fontSize: 13,
+                                                            color: Colors.grey[700])),
+                                                    Text(
+                                                        "Durum: ${danisman.status == 1 ? "Aktif" : "Pasif"}",
+                                                        style: TextStyle(
+                                                            fontSize: 13,
+                                                            color: Colors.grey[700])),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                                        // Sil butonu
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                                          child: Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.red[50],
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                          child: IconButton(
+                                              icon: Icon(Icons.delete_outline,
+                                                  color: Colors.red[600], size: 22),
+                                              onPressed: () =>
+                                                  _showDeleteConfirmation(context, danisman),
+                                              padding: const EdgeInsets.all(8),
+                                              constraints: const BoxConstraints(),
+                                            ),
+                          ),
+                        ),
+                        // Sıra No
+                        Positioned(
+                          top: 8,
+                          left: 8,
+                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.red[50],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                                              danisman.position.toString(),
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.red[700]),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                              ),
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: AdminNavbar(
+        currentIndex: 0,
+        onTap: (index) {},
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ADD FEATURED CONTACT MODAL
+// ============================================================================
+
+class _AddFeaturedContactModal extends StatefulWidget {
+  final FeaturedContactRepository repository;
+  final VoidCallback onSuccess;
+
+  const _AddFeaturedContactModal({
+    required this.repository,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_AddFeaturedContactModal> createState() => _AddFeaturedContactModalState();
+}
+
+class _AddFeaturedContactModalState extends State<_AddFeaturedContactModal> {
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _positionController = TextEditingController();
+  final ContactApiRepository _contactRepository = ContactApiRepository();
+  
+  String _searchText = '';
+  Map<String, dynamic>? _selectedContact;
+  List<Map<String, dynamic>> _allContacts = [];
+  DateTime? _startDate;
+  DateTime? _endDate;
+  bool _isSubmitting = false;
+  bool _isLoadingContacts = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Don't load contacts on init - only when user searches
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _positionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadContacts({String? searchQuery}) async {
+    setState(() {
+      _isLoadingContacts = true;
+    });
+    
+    // Search advisors with query parameter
+    final result = await _contactRepository.getAdvisorList(searchQuery: searchQuery);
+    
+    result.fold(
+      (failure) {
+        setState(() {
+          _allContacts = [];
+          _isLoadingContacts = false;
+        });
+        _showErrorSnackBar(failure.message);
+      },
+      (contacts) {
+        setState(() {
+          _allContacts = contacts;
+          _isLoadingContacts = false;
+        });
+      },
+    );
+  }
+
+  List<Map<String, dynamic>> get _filteredContacts {
+    // No filtering needed - API already filters
+    return _allContacts;
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[600],
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _submitFeaturedContact() async {
+    if (_selectedContact == null) {
+      _showErrorSnackBar('Lütfen bir danışman seçin');
+      return;
+    }
+
+    if (_startDate == null || _endDate == null) {
+      _showErrorSnackBar('Lütfen tarih aralığı seçin');
+      return;
+    }
+
+    final position = int.tryParse(_positionController.text);
+    if (position == null || position < 0 || position > 99) {
+      _showErrorSnackBar('Lütfen geçerli bir sıra no girin (0-99)');
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    final request = FeaturedContactCreateRequest.fromDateTimes(
+      contactNo: _selectedContact!['contact_no'],
+      startDate: _startDate!,
+      endDate: _endDate!,
+      position: position,
+    );
+
+    final result = await widget.repository.createFeaturedContact(request);
+
+    result.fold(
+      (failure) {
+        setState(() => _isSubmitting = false);
+        _showErrorSnackBar(failure.message);
+      },
+      (success) {
+        setState(() => _isSubmitting = false);
+        widget.onSuccess();
+        Navigator.of(context).pop();
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.9,
+      decoration: const BoxDecoration(
+      color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+          child: Column(
+            children: [
+          // Modern Gradient Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.red[700]!, Colors.red[500]!],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.red.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.star, color: Colors.white, size: 24),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Yeni Öne Çıkan Danışman Ekle',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white, size: 24),
+                    onPressed: () => Navigator.of(context).pop(),
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Content
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                    // Danışman Section
+                    _buildSectionLabel('Danışman', Icons.person),
+                    const SizedBox(height: 12),
+
+                    if (_selectedContact == null) ...[
+                      // Search field
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey[200]!, width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.02),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                        child: TextField(
+                          controller: _searchController,
+                          onChanged: (value) {
+                            setState(() => _searchText = value);
+                            // Call API with search query
+                            if (value.isNotEmpty) {
+                              _loadContacts(searchQuery: value);
+                            }
+                          },
+                          style: const TextStyle(fontSize: 15),
+                          decoration: InputDecoration(
+                            hintText: 'Ara',
+                            hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
+                            prefixIcon: Icon(Icons.search, color: Colors.grey[400], size: 22),
+                            filled: true,
+                            fillColor: Colors.transparent,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.red[400]!, width: 2),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                                vertical: 16, horizontal: 16),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Contact list - only show when searching
+                      if (_searchText.isNotEmpty) ...[
+                        Container(
+                          constraints: const BoxConstraints(maxHeight: 300),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey[300]!),
+                          ),
+                          child: _isLoadingContacts
+                              ? const Padding(
+                                  padding: EdgeInsets.all(20.0),
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        CircularProgressIndicator(color: Colors.red),
+                                        SizedBox(height: 12),
+                                        Text('Aranıyor...', style: TextStyle(color: Colors.grey)),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                              : _filteredContacts.isEmpty
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(20.0),
+                                      child: Center(
+                                        child: Text(
+                                          'Danışman bulunamadı',
+                                          style: TextStyle(color: Colors.grey),
+                                        ),
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                  shrinkWrap: true,
+                                  itemCount: _filteredContacts.length,
+                                  separatorBuilder: (context, index) => Divider(
+                                    height: 1,
+                                    color: Colors.grey[200],
+                                  ),
+                                  itemBuilder: (context, index) {
+                                    final contact = _filteredContacts[index];
+                                    final imageUrl = contact['picture'] != null &&
+                                            ImageUtils.isValidS3Id(contact['picture'])
+                                        ? ImageUtils.getCoverImageUrl(contact['picture'])
+                                        : null;
+
+                                    return ListTile(
+                                      leading: ClipRRect(
+                                        borderRadius: BorderRadius.circular(25),
+                                        child: imageUrl != null
+                                            ? Image.network(
+                                                imageUrl,
+                                                width: 50,
+                                                height: 50,
+                                                fit: BoxFit.cover,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  return Container(
+                                                    width: 50,
+                                                    height: 50,
+                                                    color: Colors.grey[300],
+                                                    child: Icon(Icons.person,
+                                                        color: Colors.grey[500]),
+                                                  );
+                                                },
+                                              )
+                                            : Container(
+                                                width: 50,
+                                                height: 50,
+                                                color: Colors.grey[300],
+                                                child: Icon(Icons.person,
+                                                    color: Colors.grey[500]),
+                                              ),
+                                      ),
+                                      title: Text(
+                                        contact['title'] ?? '',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                      subtitle: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            contact['e_mail'] ?? '',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                          Text(
+                                            contact['type_description'] ?? '',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey[500],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                          onTap: () {
+                            setState(() {
+                                          _selectedContact = contact;
+                              _searchText = '';
+                              _searchController.clear();
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                      ],
+              ] else ...[
+                      // Selected contact card
+                Container(
+                        padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey[300]!),
+                  ),
+                        child: Row(
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(25),
+                              child: _selectedContact!['picture'] != null &&
+                                      ImageUtils.isValidS3Id(_selectedContact!['picture'])
+                                  ? Image.network(
+                                      ImageUtils.getCoverImageUrl(_selectedContact!['picture']),
+                                      width: 50,
+                                      height: 50,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Container(
+                                          width: 50,
+                                          height: 50,
+                                          color: Colors.grey[300],
+                                          child: Icon(Icons.person, color: Colors.grey[500]),
+                                        );
+                                      },
+                                    )
+                                  : Container(
+                                      width: 50,
+                                      height: 50,
+                                      color: Colors.grey[300],
+                                      child: Icon(Icons.person, color: Colors.grey[500]),
+                                    ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _selectedContact!['title'] ?? '',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  Text(
+                                    _selectedContact!['e_mail'] ?? '',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                  Text(
+                                    _selectedContact!['type_description'] ?? '',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              icon: Icon(Icons.close, color: Colors.red[600]),
+                      onPressed: () {
+                                setState(() => _selectedContact = null);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 24),
+
+                    // Tarih Section
+                    _buildSectionLabel('Tarih', Icons.calendar_month),
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: () async {
+                        await showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (context) => ModernDateRangePicker(
+                            startDate: _startDate,
+                            endDate: _endDate,
+                            onDateRangeSelected: (start, end, startTime, endTime) {
+                        setState(() {
+                                _startDate = start;
+                                _endDate = end;
+                              });
+                            },
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[50],
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: _startDate != null && _endDate != null
+                                ? Colors.red[300]!
+                                : Colors.grey[300]!,
+                            width: _startDate != null && _endDate != null ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              color: _startDate != null && _endDate != null
+                                  ? Colors.red[400]
+                                  : Colors.grey[400],
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                _startDate != null && _endDate != null
+                                    ? '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}'
+                                    : 'Başlangıç - Bitiş Aralığı Seçiniz',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  color: _startDate != null && _endDate != null
+                                      ? Colors.black87
+                                      : Colors.grey[400],
+                    ),
+                  ),
+                ),
+              ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Sıra No Section
+                    _buildSectionLabel('Sıra No', Icons.format_list_numbered),
+                    const SizedBox(height: 12),
+              TextField(
+                      controller: _positionController,
+                      keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                        hintText: '0-99',
+                        hintStyle: TextStyle(color: Colors.grey[400]),
+                  filled: true,
+                        fillColor: Colors.grey[50],
+                  border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.grey[300]!),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide(color: Colors.red[400]!, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 16, horizontal: 16),
+                      ),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    // Ekle Button (Modern Gradient)
+                    Container(
+                width: double.infinity,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        gradient: _selectedContact != null &&
+                                _startDate != null &&
+                                _endDate != null &&
+                                !_isSubmitting
+                            ? LinearGradient(
+                                colors: [Colors.red[600]!, Colors.red[700]!],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                            : null,
+                        color: _selectedContact == null ||
+                                _startDate == null ||
+                                _endDate == null ||
+                                _isSubmitting
+                            ? Colors.grey[300]
+                            : null,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: _selectedContact != null &&
+                                _startDate != null &&
+                                _endDate != null &&
+                                !_isSubmitting
+                            ? [
+                                BoxShadow(
+                                  color: Colors.red.withValues(alpha: 0.4),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ]
+                            : [],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _isSubmitting ||
+                                  _selectedContact == null ||
+                                  _startDate == null ||
+                                  _endDate == null
+                              ? null
+                              : _submitFeaturedContact,
+                          borderRadius: BorderRadius.circular(16),
+                          child: Center(
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 3,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.check_circle,
+                                          color: Colors.white, size: 22),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Ekle',
+                                        style: TextStyle(
+                                          fontSize: 17,
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}.${date.month}.${date.year}';
+  }
+
+  Widget _buildSectionLabel(String text, IconData icon) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.red[50],
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 18, color: Colors.red[600]),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          text,
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+            color: Colors.grey[800],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
