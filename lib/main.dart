@@ -17,6 +17,7 @@ import 'package:zecorner/core/network/network_info_impl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zecorner/core/services/local_device_notification_service.dart';
 import 'package:zecorner/core/widgets/app_update_bootstrap.dart';
+import 'package:zecorner/core/widgets/keyboard_dismiss.dart';
 import 'package:zecorner/core/widgets/notification_bootstrap.dart';
 import 'package:zecorner/core/widgets/session_expired_bootstrap.dart';
 import 'package:zecorner/presentation/widgets/status/app_status_view.dart';
@@ -118,8 +119,10 @@ class MyApp extends StatelessWidget {
           child: MaterialApp(
             navigatorKey: appNavigatorKey,
             debugShowCheckedModeBanner: false,
-            builder: (context, child) => AppUpdateBootstrap(
-              child: child ?? const SizedBox.shrink(),
+            builder: (context, child) => KeyboardDismiss(
+              child: AppUpdateBootstrap(
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
             // API Network Inspector (debug) — geri açmak için aşağıdaki builder'ı kullan:
             // builder: (context, child) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zecorner/core/cubit/auth_cubit.dart';
 import 'package:zecorner/presentation/widgets/role-sidebar/role_sidebar.dart';
 import 'package:zecorner/presentation/widgets/navbar/admin_navbar.dart';
@@ -42,6 +43,9 @@ class _ZeDosyaScreenState extends State<ZeDosyaScreen> with TickerProviderStateM
   String selectedCategory = 'Hepsi';
   String search = '';
 
+  /// Ekleme, indirme ve düzenleme yalnız admin. Diğer ünvanlar listeyi görür.
+  bool _canManage = false;
+
   @override
   void initState() {
     super.initState();
@@ -57,6 +61,8 @@ class _ZeDosyaScreenState extends State<ZeDosyaScreen> with TickerProviderStateM
       curve: Curves.easeInOut,
     ));
     _animationController.forward();
+    _canManage = context.read<AuthCubit>().isAdmin;
+    _loadAccess();
 
     // Initialize repository
     _zeDosyaRepository = ZeDosyaApiRepository(dio: Dio());
@@ -92,6 +98,27 @@ class _ZeDosyaScreenState extends State<ZeDosyaScreen> with TickerProviderStateM
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadAccess() async {
+    final prefs = await SharedPreferences.getInstance();
+    final roles = prefs.getStringList('userRoleCodes') ?? [];
+    final permissions = (prefs.getString('userPermissions') ?? '')
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
+    final isAdmin = prefs.getBool('userIsAdmin') == true ||
+        roles.contains('role_admin') ||
+        (mounted && context.read<AuthCubit>().isAdmin);
+    if (!mounted) return;
+    setState(() {
+      _canManage = RoleSidebar.allows(
+        'admin_only',
+        isAdmin: isAdmin,
+        roleCodes: roles,
+        permissions: permissions,
+      );
+    });
   }
 
   Future<void> _loadFiles({bool isLoadMore = false}) async {
@@ -359,7 +386,7 @@ class _ZeDosyaScreenState extends State<ZeDosyaScreen> with TickerProviderStateM
               ),
             ),
             
-            // Add File Button
+            if (_canManage)
             SliverToBoxAdapter(
               child: Container(
                 margin: EdgeInsets.all(20),
@@ -368,12 +395,14 @@ class _ZeDosyaScreenState extends State<ZeDosyaScreen> with TickerProviderStateM
                   height: 56,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [Colors.blue[600]!, Colors.blue[700]!],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Colors.red[600]!, Colors.red[700]!],
                     ),
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.blue.withOpacity(0.3),
+                        color: Colors.red.withOpacity(0.3),
                         blurRadius: 12,
                         offset: Offset(0, 6),
                       ),
@@ -490,6 +519,7 @@ class _ZeDosyaScreenState extends State<ZeDosyaScreen> with TickerProviderStateM
                                     padding: EdgeInsets.only(bottom: 16),
                                     child: ModernFileCard(
                                       file: file,
+                                      canManage: _canManage,
                                       onUpdated: () {
                                         setState(() {
                                           _currentPage = 1;
@@ -587,10 +617,12 @@ class _ZeDosyaScreenState extends State<ZeDosyaScreen> with TickerProviderStateM
 
 class ModernFileCard extends StatefulWidget {
   final ZeDosyaApiModel file;
+  final bool canManage;
   final VoidCallback? onUpdated;
 
   const ModernFileCard({
     required this.file,
+    this.canManage = false,
     this.onUpdated,
     Key? key,
   }) : super(key: key);
@@ -869,7 +901,7 @@ class _ModernFileCardState extends State<ModernFileCard> with SingleTickerProvid
                         ),
                       ),
                       
-                      // Action Buttons with Modern Design
+                      if (widget.canManage)
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

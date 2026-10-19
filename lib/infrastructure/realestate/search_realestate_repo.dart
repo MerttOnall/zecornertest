@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/error/failures.dart';
 import '../../core/network/dio_client.dart';
 import '../../core/repositories/base_repository.dart';
+import '../../models/customer/customer_api_model.dart';
 import '../../models/realestate/search_realestate_model.dart';
 import 'package:zecorner/core/config/env_api.dart';
 
@@ -159,6 +160,65 @@ class SearchRealEstateRepository with BaseRepository {
       print('❌ Genel mülk arama hatası: $e');
       return left(UnknownFailure(message: "Mülk arama hatası: $e"));
     }
+  }
+
+  /// Web `search/listings` — müşteri düzenlemede ilgilendiği ilanlar.
+  Future<Either<Failure, List<CustomerAsset>>> searchListingsForCustomer({
+    String? query,
+    int size = 20,
+  }) async {
+    try {
+      final pref = await SharedPreferences.getInstance();
+      final token = pref.getString('userJWT');
+      final apiKey = dotenv.env["X_API_KEY"];
+      final appId = dotenv.env["X_APP_ID"];
+
+      if (token == null) {
+        return left(AuthFailure(message: "Token bulunamadı"));
+      }
+
+      final headers = {
+        'X-API-KEY': apiKey,
+        'X-APP-ID': appId,
+        'X-SESSION': token,
+        'Content-Type': 'application/json',
+      };
+
+      final queryParams = <String, dynamic>{'size': size};
+      if (query != null && query.isNotEmpty) queryParams['q'] = query;
+
+      final response = await _client.dio.get(
+        "${EnvApi.origin}/api/zecorner/search/listings",
+        queryParameters: queryParams,
+        options: Options(headers: headers),
+      );
+
+      if (response.statusCode == 200) {
+        return right(_listingHits(response.data));
+      }
+      return left(ServerFailure(
+        message: "İlan arama yapılamadı",
+        statusCode: response.statusCode,
+      ));
+    } on DioException catch (e) {
+      return left(NetworkFailure(
+        message: "İlan arama sırasında hata: ${e.message}",
+        statusCode: e.response?.statusCode,
+      ));
+    } catch (e) {
+      return left(UnknownFailure(message: "İlan arama hatası: $e"));
+    }
+  }
+
+  List<CustomerAsset> _listingHits(dynamic data) {
+    dynamic raw = data;
+    for (var i = 0; i < 3 && raw is Map; i++) {
+      final map = Map<String, dynamic>.from(raw);
+      final next = map['listings'] ?? map['data'] ?? map['items'] ?? map['results'] ?? map['ads'];
+      if (next == null) break;
+      raw = next;
+    }
+    return CustomerAsset.listFrom(raw);
   }
 
   /// Basit metin arama

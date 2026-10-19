@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:zecorner/core/widgets/keyboard_dismiss.dart';
 import 'package:zecorner/presentation/widgets/admin-panel/admin_panel_in_appbar.dart';
 import 'package:zecorner/infrastructure/coupon/coupon_api_repository.dart';
 import 'package:zecorner/models/coupon/coupon_template_model.dart';
@@ -15,7 +16,8 @@ class EditCouponTemplateScreen extends StatefulWidget {
 
 class _EditCouponTemplateScreenState extends State<EditCouponTemplateScreen>
     with CouponAdminGuard {
-  static const double _kFieldHeight = 52.0;
+  static const Color _primary = Color(0xFFE53935);
+  static const Color _text = Color(0xFF1F2937);
 
   final _formKey = GlobalKey<FormState>();
   
@@ -39,7 +41,10 @@ class _EditCouponTemplateScreenState extends State<EditCouponTemplateScreen>
     _nameController = TextEditingController(text: widget.template.name);
     _descriptionController = TextEditingController(text: widget.template.description);
     _selectedType = widget.template.type.toUpperCase() == 'DISCOUNT' ? 'DISCOUNT' : 'FREE';
-    _appliesToSelection = widget.template.appliesTo ?? _kPaymentUnset;
+    final appliesTo = widget.template.appliesTo;
+    _appliesToSelection = (appliesTo == 'advisor' || appliesTo == 'training')
+        ? appliesTo!
+        : _kPaymentUnset;
     _selectedStatus = widget.template.status;
     
     if (widget.template.type.toUpperCase() == 'DISCOUNT' && widget.template.data != null) {
@@ -203,74 +208,131 @@ class _EditCouponTemplateScreenState extends State<EditCouponTemplateScreen>
     if (gate != null) return gate;
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF7F7F8),
       appBar: AdminPanelInAppBar(
         title: 'Kupon Şablonu Düzenle',
         onBackPressed: () => Navigator.pop(context),
       ),
-      body: SafeArea(
-        child: Form(
-          key: _formKey,
-          child: Container(
-            color: Colors.white,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 8),
-                  
-                  // Ad
-                  _buildSectionTitle('Ad'),
-                  const SizedBox(height: 12),
-                  _buildNameField(),
-                  const SizedBox(height: 28),
-                  
-                  // Açıklama
-                  _buildSectionTitle('Açıklama'),
-                  const SizedBox(height: 12),
-                  _buildDescriptionField(),
-                  const SizedBox(height: 28),
-                  
-                  _buildSectionTitle('Kupon Türü'),
-                  const SizedBox(height: 12),
-                  _buildTypeDropdown(),
-                  const SizedBox(height: 28),
-
-                  _buildSectionTitle('Kuponun geçerli olduğu ödeme türü'),
-                  const SizedBox(height: 12),
-                  _buildAppliesToDropdown(),
-                  const SizedBox(height: 28),
-                  
-                  if (_selectedType == 'DISCOUNT') ...[
-                    _buildSectionTitle('İndirim yüzdesi'),
-                    const SizedBox(height: 12),
-                    _buildDiscountPercentField(),
-                    const SizedBox(height: 28),
-                    _buildSectionTitle('Minimum sepet tutarı'),
-                    const SizedBox(height: 12),
-                    _buildThresholdField(),
-                    const SizedBox(height: 28),
-                    _buildSectionTitle('Maksimum indirim tutarı (₺)'),
-                    const SizedBox(height: 12),
-                    _buildMaxDiscountField(),
-                    const SizedBox(height: 28),
-                  ],
-                  
-                  _buildSectionTitle('Durum'),
-                  const SizedBox(height: 12),
-                  _buildStatusDropdown(),
-                  const SizedBox(height: 48),
-                  
-                  // Butonlar
-                  _buildActionButtons(),
-                  const SizedBox(height: 20),
-                ],
-              ),
+      body: KeyboardDismiss(
+        child: SafeArea(
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      16,
+                      16,
+                      16 + MediaQuery.viewInsetsOf(context).bottom,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSectionTitle('Ad'),
+                        const SizedBox(height: 8),
+                        _buildNameField(),
+                        const SizedBox(height: 18),
+                        _buildSectionTitle('Açıklama'),
+                        const SizedBox(height: 8),
+                        _buildDescriptionField(),
+                        const SizedBox(height: 18),
+                        _buildSectionTitle('Kupon Türü'),
+                        const SizedBox(height: 8),
+                        _buildTypeDropdown(),
+                        const SizedBox(height: 18),
+                        _buildSectionTitle('Kuponun geçerli olduğu ödeme türü'),
+                        const SizedBox(height: 8),
+                        _buildAppliesToDropdown(),
+                        if (_selectedType == 'DISCOUNT') ...[
+                          const SizedBox(height: 18),
+                          _buildSectionTitle('İndirim yüzdesi'),
+                          const SizedBox(height: 8),
+                          _buildDiscountPercentField(),
+                          const SizedBox(height: 18),
+                          _buildSectionTitle('Minimum sepet tutarı'),
+                          const SizedBox(height: 8),
+                          _buildThresholdField(),
+                          const SizedBox(height: 18),
+                          _buildSectionTitle('Maksimum indirim tutarı (₺)'),
+                          const SizedBox(height: 8),
+                          _buildMaxDiscountField(),
+                        ],
+                        const SizedBox(height: 18),
+                        _buildSectionTitle('Durum'),
+                        const SizedBox(height: 8),
+                        _buildStatusDropdown(),
+                      ],
+                    ),
+                  ),
+                ),
+                _buildActionButtons(),
+              ],
             ),
           ),
         ),
       ),
+    );
+  }
+
+  InputDecoration _fieldDecoration({
+    required IconData icon,
+    String? hint,
+    String? suffix,
+  }) {
+    const radius = BorderRadius.all(Radius.circular(14));
+    final border = OutlineInputBorder(
+      borderRadius: radius,
+      borderSide: BorderSide(color: _primary.withOpacity(0.22), width: 1.2),
+    );
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(
+        color: Colors.grey.shade400,
+        fontSize: 15,
+        fontWeight: FontWeight.w500,
+      ),
+      prefixIcon: Padding(
+        padding: const EdgeInsets.only(left: 12, right: 4),
+        child: Container(
+          width: 34,
+          height: 34,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _primary.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: _primary, size: 18),
+        ),
+      ),
+      prefixIconConstraints: const BoxConstraints(minWidth: 58, minHeight: 52),
+      suffixText: suffix,
+      suffixStyle: const TextStyle(
+        color: _text,
+        fontWeight: FontWeight.w700,
+        fontSize: 15,
+      ),
+      isDense: true,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+      border: border,
+      enabledBorder: border,
+      focusedBorder: const OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: _primary, width: 1.4),
+      ),
+      errorBorder: const OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: _primary, width: 1.2),
+      ),
+      focusedErrorBorder: const OutlineInputBorder(
+        borderRadius: radius,
+        borderSide: BorderSide(color: _primary, width: 1.4),
+      ),
+      errorStyle: const TextStyle(fontSize: 12, height: 1.2),
     );
   }
 
@@ -279,635 +341,272 @@ class _EditCouponTemplateScreenState extends State<EditCouponTemplateScreen>
       children: [
         Container(
           width: 4,
-          height: 20,
+          height: 16,
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                const Color(0xFFE53935),
-                const Color(0xFFE53935).withOpacity(0.6),
-              ],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
+            color: _primary,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
-        const SizedBox(width: 10),
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF1F2937),
-            letterSpacing: -0.3,
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: _text,
+              height: 1.2,
+            ),
           ),
         ),
       ],
     );
   }
 
+  TextStyle get _fieldTextStyle => const TextStyle(
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+        color: _text,
+      );
+
   Widget _buildNameField() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: TextFormField(
-          controller: _nameController,
-          textAlignVertical: TextAlignVertical.center,
-          decoration: InputDecoration(
-            hintText: 'Örn: %30 indirim',
-            hintStyle: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            prefixIcon: Container(
-              margin: const EdgeInsets.all(10),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE53935).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.label_rounded,
-                color: Color(0xFFE53935),
-                size: 20,
-              ),
-            ),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: InputBorder.none,
-          ),
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Ad giriniz';
-            }
-            return null;
-          },
-        ),
+    return TextFormField(
+      controller: _nameController,
+      textAlignVertical: TextAlignVertical.center,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(
+        icon: Icons.label_rounded,
+        hint: 'Örn: %30 indirim',
       ),
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Ad giriniz';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildDescriptionField() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: TextFormField(
-          controller: _descriptionController,
-          maxLines: 1,
-          textAlignVertical: TextAlignVertical.center,
-          decoration: InputDecoration(
-            hintText: 'Açıklama giriniz',
-            hintStyle: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            prefixIcon: Container(
-              margin: const EdgeInsets.all(10),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE53935).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.description_rounded,
-                color: Color(0xFFE53935),
-                size: 20,
-              ),
-            ),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: InputBorder.none,
-          ),
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Açıklama giriniz';
-            }
-            return null;
-          },
-        ),
+    return TextFormField(
+      controller: _descriptionController,
+      minLines: 2,
+      maxLines: 3,
+      textAlignVertical: TextAlignVertical.top,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(
+        icon: Icons.description_rounded,
+        hint: 'Açıklama giriniz',
       ),
+      validator: (value) {
+        if (value == null || value.trim().isEmpty) {
+          return 'Açıklama giriniz';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildTypeDropdown() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: DropdownButtonFormField<String>(
-          value: _selectedType,
-          isExpanded: true,
-          menuMaxHeight: 280,
-          itemHeight: 48,
-          decoration: const InputDecoration(
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            border: InputBorder.none,
-            isDense: true,
-          ),
-          hint: Text(
-            'Kupon türü seçiniz',
-            style: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: Colors.grey.shade400,
-            size: 24,
-          ),
-          dropdownColor: Colors.white,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-          items: const [
-            DropdownMenuItem(value: 'FREE', child: Text('Ücretsiz')),
-            DropdownMenuItem(value: 'DISCOUNT', child: Text('İndirim (yüzde)')),
-          ],
-          onChanged: (value) {
-            setState(() {
-              _selectedType = value;
-              if (value == 'FREE') {
-                _discountAmountController.clear();
-                _thresholdController.clear();
-                _maxDiscountController.clear();
-              }
-            });
-          },
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Kupon türü seçiniz';
-            }
-            return null;
-          },
-        ),
-      ),
+    return DropdownButtonFormField<String>(
+      value: _selectedType,
+      isExpanded: true,
+      menuMaxHeight: 280,
+      icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey.shade500),
+      dropdownColor: Colors.white,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(icon: Icons.local_offer_rounded),
+      items: const [
+        DropdownMenuItem(value: 'FREE', child: Text('Ücretsiz')),
+        DropdownMenuItem(value: 'DISCOUNT', child: Text('İndirim (yüzde)')),
+      ],
+      onChanged: (value) {
+        setState(() {
+          _selectedType = value;
+          if (value == 'FREE') {
+            _discountAmountController.clear();
+            _thresholdController.clear();
+            _maxDiscountController.clear();
+          }
+        });
+      },
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Kupon türü seçiniz';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildDiscountPercentField() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: TextFormField(
-          controller: _discountAmountController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textAlignVertical: TextAlignVertical.center,
-          decoration: InputDecoration(
-            hintText: 'Örn: 30',
-            hintStyle: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            prefixIcon: Container(
-              margin: const EdgeInsets.all(10),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE53935).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.percent_rounded,
-                color: Color(0xFFE53935),
-                size: 20,
-              ),
-            ),
-            suffixText: '%',
-            suffixStyle: const TextStyle(
-              color: Color(0xFF1F2937),
-              fontWeight: FontWeight.w600,
-            ),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: InputBorder.none,
-          ),
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-          validator: (value) {
-            if (_selectedType != 'DISCOUNT') return null;
-            if (value == null || value.isEmpty) {
-              return 'İndirim yüzdesi giriniz';
-            }
-            final amount = double.tryParse(value.replaceAll(',', '.'));
-            if (amount == null || amount <= 0 || amount > 100) {
-              return '1–100 arası giriniz';
-            }
-            return null;
-          },
-        ),
+    return TextFormField(
+      controller: _discountAmountController,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      textAlignVertical: TextAlignVertical.center,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(
+        icon: Icons.percent_rounded,
+        hint: 'Örn: 30',
+        suffix: '%',
       ),
+      validator: (value) {
+        if (_selectedType != 'DISCOUNT') return null;
+        if (value == null || value.isEmpty) {
+          return 'İndirim yüzdesi giriniz';
+        }
+        final amount = double.tryParse(value.replaceAll(',', '.'));
+        if (amount == null || amount <= 0 || amount > 100) {
+          return '1–100 arası giriniz';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildThresholdField() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: TextFormField(
-          controller: _thresholdController,
-          keyboardType: TextInputType.number,
-          textAlignVertical: TextAlignVertical.center,
-          decoration: InputDecoration(
-            hintText: 'Örn: 500',
-            hintStyle: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            prefixIcon: Container(
-              margin: const EdgeInsets.all(10),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE53935).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.attach_money_rounded,
-                color: Color(0xFFE53935),
-                size: 20,
-              ),
-            ),
-            suffixText: '₺',
-            suffixStyle: const TextStyle(
-              color: Color(0xFF1F2937),
-              fontWeight: FontWeight.w600,
-            ),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: InputBorder.none,
-          ),
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-        ),
+    return TextFormField(
+      controller: _thresholdController,
+      keyboardType: TextInputType.number,
+      textAlignVertical: TextAlignVertical.center,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(
+        icon: Icons.shopping_bag_outlined,
+        hint: 'Örn: 500',
+        suffix: '₺',
       ),
     );
   }
 
   Widget _buildMaxDiscountField() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: TextFormField(
-          controller: _maxDiscountController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          textAlignVertical: TextAlignVertical.center,
-          decoration: InputDecoration(
-            hintText: 'Opsiyonel',
-            hintStyle: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-            prefixIcon: Container(
-              margin: const EdgeInsets.all(10),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE53935).withOpacity(0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.savings_rounded,
-                color: Color(0xFFE53935),
-                size: 20,
-              ),
-            ),
-            suffixText: '₺',
-            suffixStyle: const TextStyle(
-              color: Color(0xFF1F2937),
-              fontWeight: FontWeight.w600,
-            ),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            border: InputBorder.none,
-          ),
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-        ),
+    return TextFormField(
+      controller: _maxDiscountController,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      textAlignVertical: TextAlignVertical.center,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(
+        icon: Icons.savings_outlined,
+        hint: 'Opsiyonel',
+        suffix: '₺',
       ),
     );
   }
 
   Widget _buildAppliesToDropdown() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: DropdownButtonFormField<String>(
-          value: _appliesToSelection,
-          isExpanded: true,
-          menuMaxHeight: 280,
-          itemHeight: 48,
-          decoration: const InputDecoration(
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            border: InputBorder.none,
-            isDense: true,
-          ),
-          hint: Text(
+    return DropdownButtonFormField<String>(
+      value: _appliesToSelection,
+      isExpanded: true,
+      menuMaxHeight: 280,
+      icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey.shade500),
+      dropdownColor: Colors.white,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(icon: Icons.payments_outlined),
+      items: [
+        DropdownMenuItem(
+          value: _kPaymentUnset,
+          child: Text(
             'Ödeme türü seçiniz',
             style: TextStyle(
-              color: Colors.grey.shade400,
-              fontSize: 15,
+              color: Colors.grey.shade500,
               fontWeight: FontWeight.w500,
             ),
           ),
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: Colors.grey.shade400,
-            size: 24,
-          ),
-          dropdownColor: Colors.white,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-          items: [
-            DropdownMenuItem(
-              value: _kPaymentUnset,
-              child: Text(
-                'Ödeme türü seçiniz',
-                style: TextStyle(color: Colors.grey.shade500),
-              ),
-            ),
-            const DropdownMenuItem(value: 'advisor', child: Text('Danışman Ödemesi')),
-            const DropdownMenuItem(value: 'training', child: Text('Eğitim Ödemesi')),
-          ],
-          onChanged: (value) {
-            if (value == null) return;
-            setState(() => _appliesToSelection = value);
-          },
         ),
-      ),
+        const DropdownMenuItem(value: 'advisor', child: Text('Danışman Ödemesi')),
+        const DropdownMenuItem(value: 'training', child: Text('Eğitim Ödemesi')),
+      ],
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() => _appliesToSelection = value);
+      },
     );
   }
 
   Widget _buildStatusDropdown() {
-    return SizedBox(
-      height: _kFieldHeight,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFE53935).withOpacity(0.25),
-            width: 1.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: DropdownButtonFormField<int>(
-          value: _selectedStatus,
-          isExpanded: true,
-          menuMaxHeight: 240,
-          itemHeight: 48,
-          decoration: const InputDecoration(
-            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            border: InputBorder.none,
-            isDense: true,
-          ),
-          icon: Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: Colors.grey.shade400,
-            size: 24,
-          ),
-          dropdownColor: Colors.white,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1F2937),
-          ),
-          items: const [
-            DropdownMenuItem(value: 1, child: Text('Aktif')),
-            DropdownMenuItem(value: 0, child: Text('Pasif')),
-          ],
-          onChanged: (value) {
-            setState(() {
-              _selectedStatus = value ?? 1;
-            });
-          },
-        ),
-      ),
+    return DropdownButtonFormField<int>(
+      value: _selectedStatus,
+      isExpanded: true,
+      menuMaxHeight: 240,
+      icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey.shade500),
+      dropdownColor: Colors.white,
+      style: _fieldTextStyle,
+      decoration: _fieldDecoration(icon: Icons.toggle_on_outlined),
+      items: const [
+        DropdownMenuItem(value: 1, child: Text('Aktif')),
+        DropdownMenuItem(value: 0, child: Text('Pasif')),
+      ],
+      onChanged: (value) {
+        setState(() {
+          _selectedStatus = value ?? 1;
+        });
+      },
     );
   }
 
   Widget _buildActionButtons() {
-    return Row(
-      children: [
-        Expanded(
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => Navigator.pop(context),
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: Colors.grey.shade300,
-                    width: 1.5,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  height: 50,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.grey.shade300, width: 1.2),
                   ),
-                ),
-                child: const Center(
-                  child: Text(
+                  child: const Text(
                     'İptal',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF1F2937),
+                      color: _text,
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 14),
-        Expanded(
-          flex: 2,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _handleSubmit,
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      const Color(0xFFE53935),
-                      const Color(0xFFD32F2F),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: _handleSubmit,
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  height: 50,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _primary,
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFE53935).withOpacity(0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Center(
-                  child: Text(
+                  child: const Text(
                     'Güncelle',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
-                      letterSpacing: 0.3,
                     ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

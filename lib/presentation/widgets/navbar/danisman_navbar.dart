@@ -15,6 +15,7 @@ import 'package:zecorner/presentation/home-screens/home_ilan_screen.dart';
 import 'package:zecorner/presentation/home-screens/home_profile_screen.dart';
 import 'package:zecorner/core/cubit/auth_cubit.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:zecorner/presentation/widgets/navbar/navbar_navigation.dart';
 
 class DanismanNavbar extends StatelessWidget {
   final int currentIndex;
@@ -46,13 +47,15 @@ class DanismanNavbar extends StatelessWidget {
                 Expanded(
                   child: GestureDetector(
                     onTap: () async {
-                      // Role kontrolü
+                      if (i == currentIndex) return;
+                      final ticket = NavbarNavigation.claim();
+                      final navigator = Navigator.of(context);
                       final authCubit = context.read<AuthCubit>();
                       final userRoleCodes = await authCubit.getUserRoleCodes();
-                      
-                      // Sadece danışman rolü varsa devam et
+                      if (ticket != NavbarNavigation.ticket) return;
+
                       if (!userRoleCodes.contains('role_advisor')) {
-                        ScaffoldMessenger.of(context).showSnackBar(
+                        ScaffoldMessenger.maybeOf(navigator.context)?.showSnackBar(
                           const SnackBar(
                             content: Text('Bu sayfaya erişim yetkiniz bulunmamaktadır.'),
                             backgroundColor: Colors.red,
@@ -98,16 +101,7 @@ class DanismanNavbar extends StatelessWidget {
                           break;
                       }
                       if (page != null) {
-                        Navigator.of(context).pushReplacement(
-                          PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) => page!,
-                            transitionDuration: Duration.zero,
-                            reverseTransitionDuration: Duration.zero,
-                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                              return child;
-                            },
-                          ),
-                        );
+                        NavbarNavigation.replaceLater(ticket, navigator, page);
                       }
                     },
                     child: Center(

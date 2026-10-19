@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,8 @@ import 'package:zecorner/infrastructure/contact/contact_api_repository.dart';
 import 'package:zecorner/infrastructure/realestate/search_realestate_repo.dart';
 import 'package:zecorner/core/utils/image_utils.dart';
 import 'package:zecorner/models/contact/ref_country_model.dart';
+import 'package:zecorner/models/contact/ref_profession_model.dart';
+import 'package:zecorner/models/contact/ref_education_model.dart';
 
 class EditCustomerScreen extends StatefulWidget {
   const EditCustomerScreen({super.key});
@@ -39,7 +42,20 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
   Timer? _searchTimer;
   List<SearchRealEstateModel> _searchResults = [];
   bool _isSearchingProperties = false;
-  SearchRealEstateModel? _selectedProperty;
+  bool _ignorePropertySearch = false;
+  final List<CustomerAsset> _selectedProperties = [];
+
+  late TextEditingController _listingsSearchController;
+  late FocusNode _listingsFocusNode;
+  Timer? _listingSearchTimer;
+  List<CustomerAsset> _listingResults = [];
+  bool _isSearchingListings = false;
+  bool _ignoreListingSearch = false;
+  final List<CustomerAsset> _selectedListings = [];
+
+  List<RefProfessionModel> _professions = [];
+  List<RefEducationModel> _educations = [];
+  bool _detailRequestStarted = false;
   
   // Müşteri Tipi için
   final TextEditingController _customerTypeSearchController = TextEditingController();
@@ -103,12 +119,16 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     _birthDateController = TextEditingController();
     _propertiesSearchController = TextEditingController();
     _propertiesFocusNode = FocusNode();
+    _listingsSearchController = TextEditingController();
+    _listingsFocusNode = FocusNode();
     
-    _propertiesFocusNode.addListener(() {
-      setState(() {});
-    });
+    _propertiesFocusNode.addListener(_onPropertiesFocus);
+    _listingsFocusNode.addListener(_onListingsFocus);
     
     _propertiesSearchController.addListener(_onPropertiesSearchChanged);
+    _listingsSearchController.addListener(_onListingsSearchChanged);
+    _loadProfessions();
+    _loadEducations();
     
     // Müşteri Tipi için
     _filteredCustomerTypes = List.from(_allCustomerTypes);
@@ -143,6 +163,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
             setState(() {
               _countries = countriesResponse.countries;
               _isLoadingCountries = false;
+              _selectedNationality = _resolvedNationality();
             });
           },
         );
@@ -168,82 +189,8 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     if (_customer == null) {
       _customer = ModalRoute.of(context)?.settings.arguments as CustomerApiModel?;
       if (_customer != null) {
-        _firstNameController.text = _customer!.name;
-        _lastNameController.text = _customer!.surname;
-        _tcNumberController.text = _customer!.tcIdNumber ?? '';
-        _emailController.text = _customer!.eMail;
-        _phoneController.text = _customer!.tel;
-        _taxNumberController.text = _customer!.taxNo;
-        _taxOfficeController.text = _customer!.taxOffice;
-        _instagramController.text = _customer!.detail.socialMedia?.instagram ?? '';
-        _facebookController.text = _customer!.detail.socialMedia?.facebook ?? '';
-        _twitterController.text = _customer!.detail.socialMedia?.x ?? '';
-        _linkedinController.text = _customer!.detail.socialMedia?.linkedin ?? '';
-        _howDidYouHearController.text = _customer!.detail.whereYouHeardUs;
-        _notesController.text = _customer!.detail.coverLetter;
-        _tagsController.text = _customer!.detail.detail?.tags?.join(', ') ?? '';
-        _monthlyIncomeController.text = _customer!.detail.detail?.monthlySalary ?? '';
-        _numberOfChildrenController.text =
-            _customer!.detail.detail != null ? _customer!.detail.detail!.childrenAmount.toString() : '0';
-
-        // Cinsiyet
-        if (_customer!.sex == 'M') {
-          _selectedGender = 'Erkek';
-        } else if (_customer!.sex == 'F') {
-          _selectedGender = 'Kadın';
-        } else {
-          _selectedGender = null;
-        }
-
-        // Doğum tarihi
-        final birthdayRaw = _customer!.detail.birthday;
-        if (birthdayRaw != null && birthdayRaw.isNotEmpty) {
-          DateTime? parsed;
-          try {
-            parsed = DateTime.tryParse(birthdayRaw);
-          } catch (_) {
-            parsed = null;
-          }
-          // Eğer backend farklı format döndürdüyse, burada ek parse eklenebilir.
-          if (parsed != null) {
-            _selectedBirthDate = parsed;
-            _birthDateController.text = _formatDateForDisplay(parsed);
-          }
-        }
-        
-        // Müşteri tipini dropdown değerlerine göre ayarla
-        final typeDesc = _customer!.typeDescription;
-        if (typeDesc.isNotEmpty && _allCustomerTypes.contains(typeDesc)) {
-          _selectedCustomerType = typeDesc;
-        } else if (_customer!.type == 201) {
-          _selectedCustomerType = 'Alıcı';
-        } else if (_customer!.type == 202) {
-          _selectedCustomerType = 'Satıcı';
-        } else {
-          _selectedCustomerType = null;
-        }
-        
-        _selectedNationality = _customer!.nationality;
-        
-        // Uzmanlık ve Eğitim için dropdown'da var mı kontrol et
-        final expertiseList = ['Eğitim', 'Sağlık', 'Teknoloji', 'Hukuk', 'Finans', 'Akademisyen'];
-        if (_customer!.detail.profession?.description != null && 
-            expertiseList.contains(_customer!.detail.profession!.description)) {
-          _selectedExpertise = _customer!.detail.profession!.description;
-        } else {
-          _selectedExpertise = null;
-        }
-        
-        final educationList = ['Lise', 'Üniversite', 'Yüksek Lisans', 'Doktora'];
-        if (_customer!.detail.education?.description != null && 
-            educationList.contains(_customer!.detail.education!.description)) {
-          _selectedEducation = _customer!.detail.education!.description;
-        } else {
-          _selectedEducation = null;
-        }
-        
-        _selectedMaritalStatus = _customer!.detail.detail?.maritalStatus;
-        _isActive = _customer!.status == 1;
+        _fillFromCustomer(_customer!);
+        _loadFullCustomer();
       }
     }
   }
@@ -255,10 +202,467 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     return '$d/$m/$y';
   }
 
+  Future<String?> _pictureDataUri(File file) async {
+    try {
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return null;
+      final path = file.path.toLowerCase();
+      final mime = path.endsWith('.png')
+          ? 'image/png'
+          : path.endsWith('.webp')
+              ? 'image/webp'
+              : 'image/jpeg';
+      return 'data:$mime;base64,${base64Encode(bytes)}';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _customerPictureUrl(String raw) {
+    final value = raw.trim();
+    if (value.startsWith('http://') || value.startsWith('https://')) return value;
+    return ImageUtils.getProfileImageUrl(value);
+  }
+
   String _formatDateForApi(DateTime date) {
     final m = date.month.toString().padLeft(2, '0');
     final d = date.day.toString().padLeft(2, '0');
     return '${date.year}-$m-$d';
+  }
+
+  void _fillFromCustomer(CustomerApiModel customer) {
+    _firstNameController.text = customer.name;
+    _lastNameController.text = customer.surname;
+    _tcNumberController.text = customer.tcIdNumber ?? '';
+    _emailController.text = customer.eMail;
+    _phoneController.text = customer.tel;
+    _taxNumberController.text = customer.taxNo;
+    _taxOfficeController.text = customer.taxOffice;
+    _instagramController.text = customer.detail.socialMedia?.instagram ?? '';
+    _facebookController.text = customer.detail.socialMedia?.facebook ?? '';
+    _twitterController.text = customer.detail.socialMedia?.x ?? '';
+    _linkedinController.text = customer.detail.socialMedia?.linkedin ?? '';
+    _howDidYouHearController.text = customer.detail.whereYouHeardUs;
+    _notesController.text = customer.detail.coverLetter;
+    _tagsController.text = customer.detail.detail?.tags?.join(', ') ?? '';
+    _monthlyIncomeController.text = _formatSalary(customer.detail.detail?.monthlySalary);
+    _numberOfChildrenController.text = customer.detail.detail == null
+        ? ''
+        : '${customer.detail.detail!.childrenAmount}';
+
+    if (customer.sex == 'M') {
+      _selectedGender = 'Erkek';
+    } else if (customer.sex == 'F') {
+      _selectedGender = 'Kadın';
+    } else {
+      _selectedGender = null;
+    }
+
+    final birthdayRaw = customer.detail.birthday;
+    _selectedBirthDate = null;
+    _birthDateController.clear();
+    final parsedBirthday = birthdayRaw == null ? null : _parseBirthday(birthdayRaw);
+    if (parsedBirthday != null) {
+      _selectedBirthDate = parsedBirthday;
+      _birthDateController.text = _formatDateForDisplay(parsedBirthday);
+    }
+
+    final typeDesc = customer.typeDescription.trim();
+    final matchedType = _matchCustomerType(typeDesc);
+    if (matchedType != null) {
+      _selectedCustomerType = matchedType;
+    } else if (typeDesc.isNotEmpty) {
+      _selectedCustomerType = typeDesc;
+      if (!_allCustomerTypes.contains(typeDesc)) {
+        _allCustomerTypes.insert(0, typeDesc);
+        _filteredCustomerTypes = List<String>.from(_allCustomerTypes);
+      }
+    } else {
+      final fromCode = CustomerApiModel.labelForType(customer.type);
+      _selectedCustomerType = fromCode;
+      if (fromCode != null && !_allCustomerTypes.contains(fromCode)) {
+        _allCustomerTypes.insert(0, fromCode);
+        _filteredCustomerTypes = List<String>.from(_allCustomerTypes);
+      }
+    }
+
+    _selectedNationality = customer.nationality;
+    _syncExpertise();
+    _syncEducation();
+    _selectedMaritalStatus = _maritalLabel(customer.detail.detail?.maritalStatus);
+    _selectedListings
+      ..clear()
+      ..addAll(customer.listings);
+    _selectedProperties
+      ..clear()
+      ..addAll(customer.realEstates);
+    _isActive = customer.status == 1;
+    _selectedNationality = _resolvedNationality() ?? customer.nationality;
+    _writeSelectionFields();
+  }
+
+  DateTime? _parseBirthday(String raw) {
+    final iso = DateTime.tryParse(raw.trim());
+    if (iso != null) return iso;
+    final match = RegExp(r'^(\d{1,2})[./-](\d{1,2})[./-](\d{4})').firstMatch(raw.trim());
+    if (match == null) return null;
+    final day = int.tryParse(match.group(1)!);
+    final month = int.tryParse(match.group(2)!);
+    final year = int.tryParse(match.group(3)!);
+    if (day == null || month == null || year == null) return null;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    return DateTime(year, month, day);
+  }
+
+  String? _matchCustomerType(String raw) {
+    final text = raw.trim().toLowerCase();
+    if (text.isEmpty) return null;
+    for (final item in _allCustomerTypes) {
+      if (item.toLowerCase() == text) return item;
+    }
+    return null;
+  }
+
+  String? _resolvedNationality() {
+    final current = _selectedNationality?.trim();
+    if (current == null || current.isEmpty) return null;
+    for (final country in _countries) {
+      if (country.code.toLowerCase() == current.toLowerCase() ||
+          country.name.toLowerCase() == current.toLowerCase()) {
+        return country.code;
+      }
+    }
+    return current;
+  }
+
+  _CustomerFieldSnapshot _captureFields() {
+    return _CustomerFieldSnapshot(
+      firstName: _firstNameController.text,
+      lastName: _lastNameController.text,
+      tc: _tcNumberController.text,
+      email: _emailController.text,
+      phone: _phoneController.text,
+      taxNo: _taxNumberController.text,
+      taxOffice: _taxOfficeController.text,
+      instagram: _instagramController.text,
+      facebook: _facebookController.text,
+      twitter: _twitterController.text,
+      linkedin: _linkedinController.text,
+      heard: _howDidYouHearController.text,
+      notes: _notesController.text,
+      tags: _tagsController.text,
+      salary: _monthlyIncomeController.text,
+      children: _numberOfChildrenController.text,
+      birth: _birthDateController.text,
+      gender: _selectedGender,
+      expertise: _selectedExpertise,
+      education: _selectedEducation,
+      marital: _selectedMaritalStatus,
+      nationality: _selectedNationality,
+      type: _selectedCustomerType,
+      listings: List<CustomerAsset>.from(_selectedListings),
+      properties: List<CustomerAsset>.from(_selectedProperties),
+    );
+  }
+
+  void _restoreBlankFields(_CustomerFieldSnapshot previous) {
+    void keep(TextEditingController controller, String value) {
+      if (controller.text.trim().isEmpty && value.trim().isNotEmpty) {
+        controller.text = value;
+      }
+    }
+
+    keep(_firstNameController, previous.firstName);
+    keep(_lastNameController, previous.lastName);
+    keep(_tcNumberController, previous.tc);
+    keep(_emailController, previous.email);
+    keep(_phoneController, previous.phone);
+    keep(_taxNumberController, previous.taxNo);
+    keep(_taxOfficeController, previous.taxOffice);
+    keep(_instagramController, previous.instagram);
+    keep(_facebookController, previous.facebook);
+    keep(_twitterController, previous.twitter);
+    keep(_linkedinController, previous.linkedin);
+    keep(_howDidYouHearController, previous.heard);
+    keep(_notesController, previous.notes);
+    keep(_tagsController, previous.tags);
+    keep(_monthlyIncomeController, previous.salary);
+    keep(_numberOfChildrenController, previous.children);
+    keep(_birthDateController, previous.birth);
+    _selectedGender ??= previous.gender;
+    _selectedExpertise ??= previous.expertise;
+    _selectedEducation ??= previous.education;
+    _selectedMaritalStatus ??= previous.marital;
+    if ((_selectedNationality ?? '').trim().isEmpty) {
+      _selectedNationality = previous.nationality;
+    }
+    _selectedCustomerType ??= previous.type;
+    if (_selectedListings.isEmpty) _selectedListings.addAll(previous.listings);
+    if (_selectedProperties.isEmpty) _selectedProperties.addAll(previous.properties);
+    _writeSelectionFields();
+  }
+
+  String _assetSummary(List<CustomerAsset> assets) {
+    return assets
+        .map((asset) => asset.title.trim())
+        .where((title) => title.isNotEmpty)
+        .join(', ');
+  }
+
+  void _writeSelectionFields() {
+    if (!_listingsFocusNode.hasFocus) {
+      _ignoreListingSearch = true;
+      _listingsSearchController.text = _assetSummary(_selectedListings);
+      _ignoreListingSearch = false;
+    }
+    if (!_propertiesFocusNode.hasFocus) {
+      _ignorePropertySearch = true;
+      _propertiesSearchController.text = _assetSummary(_selectedProperties);
+      _ignorePropertySearch = false;
+    }
+  }
+
+  void _onListingsFocus() {
+    if (_listingsFocusNode.hasFocus) {
+      _ignoreListingSearch = true;
+      _listingsSearchController.clear();
+      _ignoreListingSearch = false;
+    } else if (_listingsSearchController.text.trim().isEmpty) {
+      _ignoreListingSearch = true;
+      _listingsSearchController.text = _assetSummary(_selectedListings);
+      _ignoreListingSearch = false;
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _onPropertiesFocus() {
+    if (_propertiesFocusNode.hasFocus) {
+      _ignorePropertySearch = true;
+      _propertiesSearchController.clear();
+      _ignorePropertySearch = false;
+    } else if (_propertiesSearchController.text.trim().isEmpty) {
+      _ignorePropertySearch = true;
+      _propertiesSearchController.text = _assetSummary(_selectedProperties);
+      _ignorePropertySearch = false;
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _loadFullCustomer() async {
+    final current = _customer;
+    if (_detailRequestStarted || current == null) return;
+    _detailRequestStarted = true;
+    final result = await _customerRepository.getCustomer(current.contactNo);
+    if (!mounted) return;
+    result.fold((_) {}, (fresh) {
+      if (fresh.contactNo != current.contactNo) return;
+      final previous = _captureFields();
+      setState(() {
+        _customer = fresh;
+        _fillFromCustomer(fresh);
+        _restoreBlankFields(previous);
+        if (_selectedExpertise == null && current.detail.profession != null) {
+          _customer = current;
+          _syncExpertise();
+          _customer = fresh;
+        }
+      });
+    });
+  }
+
+  Future<void> _loadProfessions() async {
+    try {
+      final result = await _contactApiRepository.getProfessions();
+      if (!mounted) return;
+      result.fold(
+        (_) {},
+          (response) {
+          ProfessionCatalog.remember(response.professions);
+          setState(() {
+            _professions = response.professions;
+            _syncExpertise();
+          });
+        },
+      );
+    } catch (_) {}
+  }
+
+  void _syncExpertise() {
+    final profession = _customer?.detail.profession;
+    if (profession == null) return;
+    for (final item in _professions) {
+      if (item.id == profession.id ||
+          item.id == profession.code ||
+          item.code == profession.id ||
+          item.code == profession.code ||
+          item.description == profession.description) {
+        _selectedExpertise = item.description;
+        return;
+      }
+    }
+    final resolved = ProfessionCatalog.labelFor(profession.id) ??
+        ProfessionCatalog.labelFor(profession.code);
+    if (resolved != null && resolved.trim().isNotEmpty && resolved.toLowerCase() != 'n/a') {
+      _selectedExpertise = resolved;
+      return;
+    }
+    final desc = profession.description?.trim();
+    if (desc != null && desc.isNotEmpty && desc.toLowerCase() != 'n/a') {
+      _selectedExpertise = desc;
+    }
+  }
+
+  Future<void> _loadEducations() async {
+    try {
+      final result = await _contactApiRepository.getEducations();
+      if (!mounted) return;
+      result.fold((_) {}, (response) {
+        setState(() {
+          _educations = response.educations;
+          _syncEducation();
+        });
+      });
+    } catch (_) {}
+  }
+
+  void _syncEducation() {
+    final education = _customer?.detail.education;
+    if (education == null) return;
+    for (final item in _educations) {
+      if (item.id == education.id ||
+          item.id == education.code ||
+          item.code == education.id ||
+          item.code == education.code ||
+          item.description == education.description) {
+        _selectedEducation = item.description;
+        return;
+      }
+    }
+    final desc = education.description?.trim();
+    if (desc != null && desc.isNotEmpty && desc.toLowerCase() != 'n/a') {
+      _selectedEducation = desc;
+      return;
+    }
+    final code = education.code ?? education.id;
+    const known = ['Lise', 'Üniversite', 'Yüksek Lisans', 'Doktora'];
+    if (code != null && known.contains(code)) {
+      _selectedEducation = code;
+    }
+  }
+
+  List<String> _uniqueLabels(Iterable<String> source, String? current) {
+    final values = <String>[];
+    final seen = <String>{};
+    for (final item in source) {
+      final text = item.trim();
+      if (text.isEmpty || text.toLowerCase() == 'n/a' || !seen.add(text)) continue;
+      values.add(text);
+    }
+    final selected = current?.trim();
+    if (selected != null && selected.isNotEmpty && seen.add(selected)) {
+      values.insert(0, selected);
+    }
+    return values;
+  }
+
+  List<String> get _expertiseOptions {
+    final fromApi = _professions.map((item) => item.description);
+    final values = _uniqueLabels(fromApi, _selectedExpertise);
+    if (values.isEmpty) {
+      return _uniqueLabels(
+        const ['Eğitim', 'Sağlık', 'Teknoloji', 'Hukuk', 'Finans', 'Akademisyen'],
+        _selectedExpertise,
+      );
+    }
+    return values;
+  }
+
+  List<String> get _educationOptions {
+    final fromApi = _educations.map((item) => item.description);
+    final values = _uniqueLabels(fromApi, _selectedEducation);
+    if (values.isEmpty) {
+      return _uniqueLabels(
+        const ['Lise', 'Üniversite', 'Yüksek Lisans', 'Doktora'],
+        _selectedEducation,
+      );
+    }
+    return values;
+  }
+
+  String? _maritalLabel(String? raw) {
+    switch (raw?.trim()) {
+      case '1':
+      case 'Bekar':
+        return 'Bekar';
+      case '2':
+      case 'Evli':
+        return 'Evli';
+      case '3':
+      case 'Boşanmış':
+        return 'Boşanmış';
+      default:
+        return null;
+    }
+  }
+
+  String? _maritalCode(String? label) {
+    switch (label) {
+      case 'Bekar':
+        return '1';
+      case 'Evli':
+        return '2';
+      case 'Boşanmış':
+        return '3';
+      default:
+        return null;
+    }
+  }
+
+  String _formatSalary(String? raw) {
+    final digits = (raw ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty) return '';
+    final normalized = digits.length > 9 ? digits.substring(0, 9) : digits;
+    final buffer = StringBuffer();
+    for (var i = 0; i < normalized.length; i++) {
+      final fromEnd = normalized.length - i;
+      buffer.write(normalized[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write('.');
+    }
+    return buffer.toString();
+  }
+
+  String _salaryDigits(String raw) => raw.replaceAll(RegExp(r'[^0-9]'), '');
+
+  Profession? _selectedProfession() {
+    final label = _selectedExpertise?.trim();
+    if (label == null || label.isEmpty) return _customer?.detail.profession;
+    for (final item in _professions) {
+      if (item.description == label) {
+        final ref = item.id.isNotEmpty ? item.id : item.code;
+        return Profession(id: ref, code: item.code, description: item.description);
+      }
+    }
+    return Profession(
+      id: _customer?.detail.profession?.id,
+      code: _customer?.detail.profession?.code,
+      description: label,
+    );
+  }
+
+  Education? _selectedEducationModel() {
+    final label = _selectedEducation?.trim();
+    if (label == null || label.isEmpty) return _customer?.detail.education;
+    for (final item in _educations) {
+      if (item.description == label) {
+        final ref = item.id.isNotEmpty ? item.id : item.code;
+        return Education(id: ref, code: item.code, description: item.description);
+      }
+    }
+    return Education(
+      id: _customer?.detail.education?.id,
+      code: _customer?.detail.education?.code,
+      description: label,
+    );
   }
 
   Future<void> _pickBirthDate() async {
@@ -411,9 +815,18 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
   }
 
   void _onPropertiesSearchChanged() {
+    if (_ignorePropertySearch) return;
     _searchTimer?.cancel();
-    _searchTimer = Timer(const Duration(milliseconds: 500), () {
+    _searchTimer = Timer(const Duration(milliseconds: 400), () {
       _searchProperties();
+    });
+  }
+
+  void _onListingsSearchChanged() {
+    if (_ignoreListingSearch) return;
+    _listingSearchTimer?.cancel();
+    _listingSearchTimer = Timer(const Duration(milliseconds: 400), () {
+      _searchListings();
     });
   }
 
@@ -680,13 +1093,10 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
                         ),
                         itemBuilder: (context, index) {
                           final property = _searchResults[index];
-                          return InkWell(
-                            onTap: () {
-                              setState(() {
-                                _selectedProperty = property;
-                                _propertiesSearchController.text = property.title;
-                              });
-                              _propertiesFocusNode.unfocus();
+                          return Listener(
+                            behavior: HitTestBehavior.opaque,
+                            onPointerDown: (_) {
+                              _keepProperty(property);
                             },
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -727,6 +1137,70 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
                     : const SizedBox.shrink(),
       ),
     );
+  }
+
+  void _keepProperty(SearchRealEstateModel property) {
+    _ignorePropertySearch = true;
+    _propertiesSearchController.clear();
+    _ignorePropertySearch = false;
+    _searchTimer?.cancel();
+    setState(() {
+      _searchResults = [];
+      _isSearchingProperties = false;
+      if (!_selectedProperties.any((item) => item.id == property.id)) {
+        _selectedProperties.add(
+          CustomerAsset(
+            id: property.id,
+            title: property.title.isNotEmpty ? property.title : 'Başlıksız Mülk',
+            image: property.thumbnail,
+          ),
+        );
+      }
+    });
+    _propertiesFocusNode.unfocus();
+  }
+
+  Future<void> _searchListings() async {
+    final query = _listingsSearchController.text.trim();
+    if (query.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _listingResults = [];
+        _isSearchingListings = false;
+      });
+      return;
+    }
+    setState(() => _isSearchingListings = true);
+    final result = await _searchRealEstateRepository.searchListingsForCustomer(
+      query: query,
+      size: 20,
+    );
+    if (!mounted) return;
+    result.fold(
+      (_) => setState(() {
+        _isSearchingListings = false;
+        _listingResults = [];
+      }),
+      (items) => setState(() {
+        _isSearchingListings = false;
+        _listingResults = items;
+      }),
+    );
+  }
+
+  void _keepListing(CustomerAsset listing) {
+    _ignoreListingSearch = true;
+    _listingsSearchController.clear();
+    _ignoreListingSearch = false;
+    _listingSearchTimer?.cancel();
+    setState(() {
+      _listingResults = [];
+      _isSearchingListings = false;
+      if (!_selectedListings.any((item) => item.id == listing.id)) {
+        _selectedListings.add(listing);
+      }
+    });
+    _listingsFocusNode.unfocus();
   }
 
   Widget _buildPropertyThumbnail(String thumbnail) {
@@ -813,30 +1287,14 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
         return;
       }
       
-      // Müşteri tipi kodunu belirle
-      int customerTypeCode;
-      switch (_selectedCustomerType) {
-        case 'Alıcı':
-          customerTypeCode = 201;
-          break;
-        case 'Satıcı':
-          customerTypeCode = 202;
-          break;
-        case 'Potansiyel':
-        case 'Potansiyel Alıcı':
-        case 'Potansiyel Satıcı':
-          customerTypeCode = 203;
-          break;
-        case 'Alıcı & Satıcı':
-          customerTypeCode = 204; // Varsayılan kod, backend'e göre ayarlanabilir
-          break;
-        default:
-          customerTypeCode = 201; // Varsayılan
-      }
+      final customerTypeCode = CustomerApiModel.typeCodeForLabel(_selectedCustomerType) ??
+          _customer!.type;
       
       // Profil fotoğrafı upload et (eğer yeni fotoğraf seçildiyse)
       String? uploadedPictureId;
+      String? pictureDataUri;
       if (_selectedProfileImage != null) {
+        pictureDataUri = await _pictureDataUri(_selectedProfileImage!);
         final uploadResult = await _customerRepository.uploadProfilePicture(_selectedProfileImage!);
         uploadResult.fold(
           (failure) {
@@ -882,17 +1340,14 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
         source: _customer!.source,
         detail: CustomerDetail(
           id: _customer!.detail.id,
-          birthday: _selectedBirthDate != null ? _formatDateForApi(_selectedBirthDate!) : (_customer!.detail.birthday ?? ''),
-          profession: Profession(
-            id: _customer!.detail.profession?.id,
-            code: _customer!.detail.profession?.code,
-            description: _selectedExpertise,
-          ),
-          education: Education(
-            id: _customer!.detail.education?.id,
-            code: _customer!.detail.education?.code,
-            description: _selectedEducation,
-          ),
+          birthday: _selectedBirthDate != null
+              ? _formatDateForApi(_selectedBirthDate!)
+              : () {
+                  final raw = _customer!.detail.birthday?.trim() ?? '';
+                  return raw.isEmpty ? null : raw;
+                }(),
+          profession: _selectedProfession(),
+          education: _selectedEducationModel(),
           socialMedia: SocialMedia(
             instagram: _instagramController.text.trim().isEmpty ? null : _instagramController.text.trim(),
             facebook: _facebookController.text.trim().isEmpty ? null : _facebookController.text.trim(),
@@ -911,17 +1366,26 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
           detail: CustomerDetailInfo(
             tags: _tagsController.text.trim().isEmpty ? null : _tagsController.text.trim().split(',').map((e) => e.trim()).toList(),
             childrenAmount: int.tryParse(_numberOfChildrenController.text.trim()) ?? 0,
-            monthlySalary: _monthlyIncomeController.text.trim().isEmpty ? 'N/A' : _monthlyIncomeController.text.trim(),
-            maritalStatus: _selectedMaritalStatus,
+            monthlySalary: () {
+              final digits = _salaryDigits(_monthlyIncomeController.text);
+              return digits.isEmpty ? null : digits;
+            }(),
+            maritalStatus: _maritalCode(_selectedMaritalStatus),
           ),
         ),
         connectedContact: _customer!.connectedContact,
         createdAt: _customer!.createdAt,
+        listings: List<CustomerAsset>.from(_selectedListings),
+        realEstates: List<CustomerAsset>.from(_selectedProperties),
       );
 
       print('🔄 Updating customer: ${_customer!.contactNo}');
       
-      final result = await _customerRepository.updateCustomer(_customer!.contactNo, updatedCustomer);
+      final result = await _customerRepository.updateCustomer(
+        _customer!.contactNo,
+        updatedCustomer,
+        pictureDataUri: pictureDataUri,
+      );
       
       setState(() {
         _isLoading = false;
@@ -987,6 +1451,9 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     _numberOfChildrenController.dispose();
     _birthDateController.dispose();
     _propertiesSearchController.dispose();
+    _listingsSearchController.dispose();
+    _listingsFocusNode.dispose();
+    _listingSearchTimer?.cancel();
     _propertiesFocusNode.dispose();
     _searchTimer?.cancel();
     _removePropertiesOverlay();
@@ -1154,7 +1621,8 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     DropdownButtonBuilder? selectedItemBuilder,
   }) {
     return DropdownButtonFormField<T>(
-      value: value,
+      key: ValueKey('$label-${value ?? ''}'),
+      initialValue: value,
       isExpanded: true,
       dropdownColor: Colors.white,
       borderRadius: BorderRadius.circular(12),
@@ -1196,7 +1664,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
         _customer!.detail.picture!.isNotEmpty) {
       inner = ClipOval(
         child: Image.network(
-          _customer!.detail.picture!,
+          _customerPictureUrl(_customer!.detail.picture!),
           width: size,
           height: size,
           fit: BoxFit.cover,
@@ -1312,6 +1780,26 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
             'Fotoğrafı değiştirmek için dokunun',
             style: TextStyle(fontSize: 12, color: Colors.grey[500]),
           ),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if ((_selectedCustomerType ?? '').trim().isNotEmpty)
+                _headerChip(Icons.badge_outlined, _selectedCustomerType!),
+              if ((_selectedExpertise ?? '').trim().isNotEmpty)
+                _headerChip(Icons.work_outline_rounded, _selectedExpertise!),
+              if (_phoneController.text.trim().isNotEmpty)
+                _headerChip(Icons.phone_outlined, _phoneController.text.trim()),
+              ..._tagsController.text
+                  .split(',')
+                  .map((tag) => tag.trim())
+                  .where((tag) => tag.isNotEmpty)
+                  .take(4)
+                  .map((tag) => _headerChip(Icons.label_outline_rounded, tag)),
+            ],
+          ),
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1358,6 +1846,32 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
                   activeTrackColor: const Color(0xFF22C55E),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _headerChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: _fieldFill,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: _brand),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _textPrimary,
             ),
           ),
         ],
@@ -1414,12 +1928,20 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
         ),
       );
     }
+    final nationality = _resolvedNationality();
+    final countries = <RefCountryModel>[
+      ..._countries,
+      if (nationality != null &&
+          nationality.isNotEmpty &&
+          !_countries.any((country) => country.code == nationality))
+        RefCountryModel(code: nationality, name: nationality),
+    ];
     return _dropdown<String>(
       label: 'Vatandaşlık',
       icon: Icons.flag_outlined,
-      value: _selectedNationality,
+      value: nationality,
       hint: 'Lütfen vatandaşlık seçin',
-      items: _countries.map((RefCountryModel country) {
+      items: countries.map((RefCountryModel country) {
         return DropdownMenuItem<String>(
           value: country.code,
           child: Text(
@@ -1430,7 +1952,7 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
         );
       }).toList(),
       selectedItemBuilder: (BuildContext context) {
-        return _countries.map((RefCountryModel country) {
+        return countries.map((RefCountryModel country) {
           return Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -1447,51 +1969,102 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
     );
   }
 
-  Widget _buildSelectedPropertyChip() {
-    final p = _selectedProperty;
-    if (p == null) return const SizedBox.shrink();
+  Widget _buildLookupResults({
+    required String query,
+    required bool focused,
+    required bool loading,
+    required List<CustomerAsset> items,
+    required ValueChanged<CustomerAsset> onPick,
+  }) {
+    final show = query.isNotEmpty && (focused || items.isNotEmpty || loading);
+    if (!show) return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.all(10),
+      margin: const EdgeInsets.only(top: 8),
+      constraints: const BoxConstraints(maxHeight: 240),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: _brand.withValues(alpha: 0.05),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _brand.withValues(alpha: 0.25)),
+        border: Border.all(color: _border),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.grey[200],
-            ),
-            child: _buildPropertyThumbnail(p.thumbnail),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Seçili Mülk',
-                  style: TextStyle(fontSize: 11, color: _textMuted),
+      child: loading
+          ? const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(
+                child: CircularProgressIndicator(color: Color(0xFFEE2E24)),
+              ),
+            )
+          : items.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Sonuç bulunamadı', style: TextStyle(color: Colors.grey)),
+                )
+              : ListView.separated(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  itemCount: items.length,
+                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey[200]),
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    return Listener(
+                      behavior: HitTestBehavior.opaque,
+                      onPointerDown: (_) => onPick(item),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        child: Text(
+                          item.title.isEmpty ? 'İlan' : item.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                Text(
-                  p.title.isNotEmpty ? p.title : 'Başlıksız Mülk',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _textPrimary,
+    );
+  }
+
+  Widget _buildAssetChips(
+    List<CustomerAsset> assets, {
+    required ValueChanged<CustomerAsset> onRemove,
+  }) {
+    if (assets.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: assets.map((asset) {
+          return Container(
+            constraints: const BoxConstraints(maxWidth: 280),
+            padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+            decoration: BoxDecoration(
+              color: _brand.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _brand.withValues(alpha: 0.25)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    asset.title.isEmpty ? 'Kayıt' : asset.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => onRemove(asset),
+                  child: const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(Icons.close_rounded, size: 16, color: _brand),
                   ),
                 ),
               ],
             ),
-          ),
-          const Icon(Icons.check_circle_rounded, color: _brand, size: 20),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
@@ -1724,20 +2297,14 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
                     icon: Icons.work_outline_rounded,
                     value: _selectedExpertise,
                     hint: 'Lütfen uzmanlık alanı seçin',
-                    items: const [
-                      DropdownMenuItem(value: 'Eğitim', child: Text('Eğitim')),
-                      DropdownMenuItem(value: 'Sağlık', child: Text('Sağlık')),
-                      DropdownMenuItem(
-                        value: 'Teknoloji',
-                        child: Text('Teknoloji'),
-                      ),
-                      DropdownMenuItem(value: 'Hukuk', child: Text('Hukuk')),
-                      DropdownMenuItem(value: 'Finans', child: Text('Finans')),
-                      DropdownMenuItem(
-                        value: 'Akademisyen',
-                        child: Text('Akademisyen'),
-                      ),
-                    ],
+                    items: _expertiseOptions
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(item, overflow: TextOverflow.ellipsis),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (value) {
                       setState(() => _selectedExpertise = value);
                     },
@@ -1747,21 +2314,14 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
                     icon: Icons.school_outlined,
                     value: _selectedEducation,
                     hint: 'Lütfen eğitim seçin',
-                    items: const [
-                      DropdownMenuItem(value: 'Lise', child: Text('Lise')),
-                      DropdownMenuItem(
-                        value: 'Üniversite',
-                        child: Text('Üniversite'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Yüksek Lisans',
-                        child: Text('Yüksek Lisans'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'Doktora',
-                        child: Text('Doktora'),
-                      ),
-                    ],
+                    items: _educationOptions
+                        .map(
+                          (item) => DropdownMenuItem(
+                            value: item,
+                            child: Text(item, overflow: TextOverflow.ellipsis),
+                          ),
+                        )
+                        .toList(),
                     onChanged: (value) {
                       setState(() => _selectedEducation = value);
                     },
@@ -1800,9 +2360,11 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
                   controller: _monthlyIncomeController,
                   style: _inputText,
                   keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  maxLines: 1,
+                  inputFormatters: const [_SalaryInputFormatter()],
                   decoration: _decoration(
                     'Aylık Geliri (Ortalama)',
+                    hint: '30.000',
                     icon: Icons.payments_outlined,
                     suffixText: '₺',
                   ),
@@ -1858,48 +2420,50 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
               icon: Icons.home_work_outlined,
               children: [
                 TextFormField(
+                  controller: _listingsSearchController,
+                  focusNode: _listingsFocusNode,
                   style: _inputText,
                   decoration: _decoration(
                     'İlgilendiği İlanlar',
-                    hint: 'Ara',
+                    hint: 'İlan no veya başlık ara',
                     icon: Icons.search_rounded,
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    TextFormField(
-                      controller: _propertiesSearchController,
-                      focusNode: _propertiesFocusNode,
-                      style: _inputText,
-                      decoration: _decoration(
-                        'Mülkler',
-                        hint: 'Ara',
-                        icon: Icons.apartment_rounded,
-                        suffixIcon: _selectedProperty != null
-                            ? IconButton(
-                                icon: const Icon(
-                                  Icons.clear_rounded,
-                                  color: _brand,
-                                  size: 20,
-                                ),
-                                onPressed: () {
-                                  setState(() {
-                                    _selectedProperty = null;
-                                    _propertiesSearchController.clear();
-                                    _searchResults = [];
-                                  });
-                                },
-                              )
-                            : null,
-                      ),
-                    ),
-                    _buildPropertiesListInline(),
-                    if (_selectedProperty != null) ...[
-                      const SizedBox(height: 10),
-                      _buildSelectedPropertyChip(),
-                    ],
-                  ],
+                _buildLookupResults(
+                  query: _listingsSearchController.text.trim(),
+                  focused: _listingsFocusNode.hasFocus,
+                  loading: _isSearchingListings,
+                  items: _listingResults,
+                  onPick: _keepListing,
+                ),
+                _buildAssetChips(
+                  _selectedListings,
+                  onRemove: (asset) {
+                    setState(() {
+                      _selectedListings.removeWhere((item) => item.id == asset.id);
+                      _writeSelectionFields();
+                    });
+                  },
+                ),
+                TextFormField(
+                  controller: _propertiesSearchController,
+                  focusNode: _propertiesFocusNode,
+                  style: _inputText,
+                  decoration: _decoration(
+                    'Mülkler',
+                    hint: 'Mülk ara',
+                    icon: Icons.apartment_rounded,
+                  ),
+                ),
+                _buildPropertiesListInline(),
+                _buildAssetChips(
+                  _selectedProperties,
+                  onRemove: (asset) {
+                    setState(() {
+                      _selectedProperties.removeWhere((item) => item.id == asset.id);
+                      _writeSelectionFields();
+                    });
+                  },
                 ),
               ],
             ),
@@ -1942,6 +2506,86 @@ class _EditCustomerScreenState extends State<EditCustomerScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _CustomerFieldSnapshot {
+  final String firstName;
+  final String lastName;
+  final String tc;
+  final String email;
+  final String phone;
+  final String taxNo;
+  final String taxOffice;
+  final String instagram;
+  final String facebook;
+  final String twitter;
+  final String linkedin;
+  final String heard;
+  final String notes;
+  final String tags;
+  final String salary;
+  final String children;
+  final String birth;
+  final String? gender;
+  final String? expertise;
+  final String? education;
+  final String? marital;
+  final String? nationality;
+  final String? type;
+  final List<CustomerAsset> listings;
+  final List<CustomerAsset> properties;
+
+  const _CustomerFieldSnapshot({
+    required this.firstName,
+    required this.lastName,
+    required this.tc,
+    required this.email,
+    required this.phone,
+    required this.taxNo,
+    required this.taxOffice,
+    required this.instagram,
+    required this.facebook,
+    required this.twitter,
+    required this.linkedin,
+    required this.heard,
+    required this.notes,
+    required this.tags,
+    required this.salary,
+    required this.children,
+    required this.birth,
+    required this.gender,
+    required this.expertise,
+    required this.education,
+    required this.marital,
+    required this.nationality,
+    required this.type,
+    required this.listings,
+    required this.properties,
+  });
+}
+
+class _SalaryInputFormatter extends TextInputFormatter {
+  const _SalaryInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final normalized = digits.length > 9 ? digits.substring(0, 9) : digits;
+    if (normalized.isEmpty) {
+      return const TextEditingValue(text: '');
+    }
+    final buffer = StringBuffer();
+    for (var i = 0; i < normalized.length; i++) {
+      final fromEnd = normalized.length - i;
+      buffer.write(normalized[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write('.');
+    }
+    final text = buffer.toString();
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }

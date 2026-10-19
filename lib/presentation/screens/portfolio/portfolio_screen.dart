@@ -15,6 +15,7 @@ import 'package:zecorner/core/utils/image_utils.dart';
 import 'package:zecorner/infrastructure/list/my_listings_repository.dart';
 import 'package:zecorner/models/list/listing_panel_model.dart';
 import 'package:zecorner/services/portfolio_service.dart';
+import 'package:zecorner/presentation/screens/tilan/tum_ilan_detail_screen.dart';
 
 String _formatListingPrice(int? price, {String currency = 'TRY'}) {
   if (price == null || price <= 0) return 'Fiyat Belirtilmemiş';
@@ -117,10 +118,33 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
     _loadListings(refresh: true);
   }
 
+  bool _isViewOnlyListing(ListingPanelModel listing) {
+    switch (listing.state.toUpperCase()) {
+      case 'SOLD':
+      case 'RENTED':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  void _openListingDetail(ListingPanelModel listing) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => TumIlanDetailScreen(propertyId: listing.id),
+      ),
+    );
+  }
+
   /// Kart → düzenleme ekranı. Portföyüm listesi *ilan* kayıtlarıdır;
   /// düzenleme ekranı ise *portföy* (real_estate) id'siyle çalışır. İlan
   /// yanıtında `real_estate` yoksa ilan detayından çözümlenir.
+  /// Satıldı ve kiralandı kayıtlarda düzenleme açılmaz, yalnızca ilan detayı gösterilir.
   Future<void> _openEditPortfolio(ListingPanelModel listing) async {
+    if (_isViewOnlyListing(listing)) {
+      _openListingDetail(listing);
+      return;
+    }
     if (_isOpeningEdit) return;
     _isOpeningEdit = true;
     try {
@@ -1062,8 +1086,15 @@ class _PortfolioScreenState extends State<PortfolioScreen> {
         ? listing.coverPicture
         : listing.picture;
 
+    final viewOnly = _isViewOnlyListing(listing);
     return InkWell(
-      onTap: () => _openEditPortfolio(listing),
+      onTap: () {
+        if (viewOnly) {
+          _openListingDetail(listing);
+          return;
+        }
+        _openEditPortfolio(listing);
+      },
       borderRadius: BorderRadius.circular(16),
       child: Container(
         margin: const EdgeInsets.only(bottom: 20),

@@ -58,6 +58,7 @@ class _CouponSchemeScreenState extends State<CouponSchemeScreen>
             t.id.toString().contains(q);
       }).toList();
     }
+    list.sort((a, b) => b.id.compareTo(a.id));
     return list;
   }
 

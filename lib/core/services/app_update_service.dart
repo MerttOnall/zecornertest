@@ -26,7 +26,7 @@ class AppUpdateService {
   static final AppUpdateService instance = AppUpdateService._();
 
   static const _iosBundleId = 'com.zeholding.zecorner.test';
-  static const _androidPackageId = 'com.zeholding.zecornertest';
+  static const _androidPackageId = 'com.zeholding.zecorner.test';
   static const _storeCountry = 'tr';
   static const _timeout = Duration(seconds: 8);
 

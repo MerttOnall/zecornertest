@@ -176,15 +176,45 @@ class DashboardRepository with BaseRepository {
     );
   }
 
-  Future<Either<Failure, Map<String, dynamic>>> getDashboardDailyRevenue() async {
+  /// Web gelir grafiği ile aynı: 2024’ten içinde bulunulan yıla, 12 ay.
+  static const int chartFilterStartYear = 2024;
+
+  static List<int> chartFilterYears() {
+    final current = DateTime.now().year;
+    final start = current < chartFilterStartYear ? current : chartFilterStartYear;
+    return [for (var year = current; year >= start; year--) year];
+  }
+
+  static List<int> chartFilterMonths() =>
+      List<int>.generate(12, (index) => index + 1);
+
+  static Map<String, dynamic> chartFilterRange(int year, int month) {
+    final start = DateTime(year, month, 1);
+    final end = DateTime(year, month + 1, 0);
+    String two(int value) => value.toString().padLeft(2, '0');
+    return {
+      'start_date':
+          '${start.year}-${two(start.month)}-${two(start.day)}T00:00:00',
+      'end_date': '${end.year}-${two(end.month)}-${two(end.day)}T23:59:59',
+    };
+  }
+
+  Future<Either<Failure, Map<String, dynamic>>> getDashboardDailyRevenue({
+    int? year,
+    int? month,
+  }) async {
     final userContext = await _getUserContext();
     final endpoint = _getEndpointForUserRole('daily-revenue', userContext);
+    final now = DateTime.now();
     
     print('📈 Dashboard Daily Revenue - User: ${userContext['userTypeDescription']}, Endpoint: $endpoint');
     return await _makeAuthenticatedRequest(
       endpoint,
       userContext,
-      queryParams: _withOffice(userContext),
+      queryParams: _withOffice(
+        userContext,
+        chartFilterRange(year ?? now.year, month ?? now.month),
+      ),
     );
   }
 
@@ -246,13 +276,21 @@ class DashboardRepository with BaseRepository {
     return await _makeAuthenticatedRequest(endpoint, userContext);
   }
 
-  Future<Either<Failure, Map<String, dynamic>>> getAdminDailyRevenue() async {
+  Future<Either<Failure, Map<String, dynamic>>> getAdminDailyRevenue({
+    int? year,
+    int? month,
+  }) async {
     final userContext = await _getUserContext();
     // Admin endpoint'ini direkt kullan - role detection yapma
     const endpoint = '/api/zecorner/dashboard/admin/daily_revenue';
+    final now = DateTime.now();
     
     print('📈 Admin Daily Revenue - Endpoint: $endpoint (role detection bypass)');
-    return await _makeAuthenticatedRequest(endpoint, userContext);
+    return await _makeAuthenticatedRequest(
+      endpoint,
+      userContext,
+      queryParams: chartFilterRange(year ?? now.year, month ?? now.month),
+    );
   }
 
   Future<Either<Failure, Map<String, dynamic>>> getAdminSales() async {
@@ -329,13 +367,21 @@ class DashboardRepository with BaseRepository {
   }
 
   // Advisor specific methods - Direkt advisor endpoint'lerini kullan (role detection yapmadan)
-  Future<Either<Failure, Map<String, dynamic>>> getAdvisorDailyRevenue() async {
+  Future<Either<Failure, Map<String, dynamic>>> getAdvisorDailyRevenue({
+    int? year,
+    int? month,
+  }) async {
     final userContext = await _getUserContext();
     // Advisor endpoint'ini direkt kullan - role detection yapma
     const endpoint = '/api/zecorner/dashboard/advisor/daily_revenue';
+    final now = DateTime.now();
     
     print('📈 Advisor Daily Revenue - Endpoint: $endpoint (role detection bypass)');
-    return await _makeAuthenticatedRequest(endpoint, userContext);
+    return await _makeAuthenticatedRequest(
+      endpoint,
+      userContext,
+      queryParams: chartFilterRange(year ?? now.year, month ?? now.month),
+    );
   }
 
   // Backward compatibility - Delegate to universal methods
@@ -343,7 +389,11 @@ class DashboardRepository with BaseRepository {
   Future<Either<Failure, Map<String, dynamic>>> getAdvisorSales() async => getDashboardSales();
   
   Future<Either<Failure, Map<String, dynamic>>> getOfficeTotals() async => getDashboardTotals();
-  Future<Either<Failure, Map<String, dynamic>>> getOfficeDailyRevenue() async => getDashboardDailyRevenue();
+  Future<Either<Failure, Map<String, dynamic>>> getOfficeDailyRevenue({
+    int? year,
+    int? month,
+  }) async =>
+      getDashboardDailyRevenue(year: year, month: month);
   Future<Either<Failure, Map<String, dynamic>>> getOfficeSales() async => getDashboardSales();
   Future<Either<Failure, Map<String, dynamic>>> getOfficeTop() async => getDashboardTop();
 

@@ -6817,7 +6817,7 @@ class _AddPortfolioScreenState extends State<AddPortfolioScreen> {
                     urlTemplate: _isSatelliteView
                         ? EnvApi.mapRasterSatelliteTileUrlTemplate
                         : EnvApi.mapRasterTileUrlTemplate,
-                    userAgentPackageName: 'com.zeholding.zecornertest',
+                    userAgentPackageName: 'com.zecorner.app',
                     maxZoom: 19,
                   ),
                   if (_locationMarker != null)
@@ -6872,7 +6872,7 @@ class _AddPortfolioScreenState extends State<AddPortfolioScreen> {
                     urlTemplate: _isSatelliteView
                         ? EnvApi.mapRasterSatelliteTileUrlTemplate
                         : EnvApi.mapRasterTileUrlTemplate,
-                    userAgentPackageName: 'com.zeholding.zecornertest',
+                    userAgentPackageName: 'com.zecorner.app',
                     maxZoom: 19,
                   ),
                   if (_locationMarker != null)

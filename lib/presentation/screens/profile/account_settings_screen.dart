@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import 'dart:ui';
+import '../../../core/config/env_api.dart';
 import '../../../core/utils/image_utils.dart';
 import '../../../infrastructure/contact/contact_api_repository.dart';
 import '../../../models/contact/ref_profession_model.dart';
@@ -58,7 +59,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
   String _selectedCity = 'İSTANBUL';
   String _selectedDistrict = 'Ataşehir';
   String _selectedNeighborhood = 'Barbaros Mah.';
-  String _selectedDiploma = 'Lisans';
 
   final ContactApiRepository _contactRepository = ContactApiRepository();
   List<RefProfessionModel> _professions = [];
@@ -129,14 +129,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
     'Kadıköy': ['Moda Mah.', 'Fenerbahçe Mah.', 'Göztepe Mah.'],
     'Beşiktaş': ['Levent Mah.', 'Etiler Mah.', 'Ortaköy Mah.'],
   };
-
-  final List<String> _diplomaOptions = [
-    'Lise',
-    'Ön Lisans',
-    'Lisans',
-    'Yüksek Lisans',
-    'Doktora',
-  ];
 
   @override
   void initState() {
@@ -270,11 +262,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
                   const SizedBox(height: 24),
 
                   _buildDocumentsSection(),
-
-                  const SizedBox(height: 24),
-
-                  // Education Section
-                  _buildEducationSection(),
 
                   const SizedBox(height: 24),
 
@@ -434,46 +421,10 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
                                 height: 120,
                               )
                             : _userProfile != null &&
-                                    _userProfile!.detail.picture != null &&
-                                    ImageUtils.isValidS3Id(
-                                        _userProfile!.detail.picture)
-                                ? Image.network(
-                                    ImageUtils.getS3FileUrl(
-                                        _userProfile!.detail.picture),
-                                    fit: BoxFit.cover,
-                                    width: 120,
-                                    height: 120,
-                                    loadingBuilder: (context, child, progress) {
-                                      if (progress == null) return child;
-                                      return Container(
-                                        width: 120,
-                                        height: 120,
-                                        color: Colors.grey[200],
-                                        child: const Center(
-                                          child: SizedBox(
-                                            width: 24,
-                                            height: 24,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                      Color(0xFFE53935)),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    errorBuilder:
-                                        (context, error, stackTrace) {
-                                      return Container(
-                                        color: Colors.grey[200],
-                                        child: const Icon(
-                                          Icons.person,
-                                          size: 60,
-                                          color: Colors.grey,
-                                        ),
-                                      );
-                                    },
+                                    (_userProfile!.detail.picture?.trim().isNotEmpty ??
+                                        false)
+                                ? _AccountProfilePhoto(
+                                    pictureId: _userProfile!.detail.picture!,
                                   )
                                 : Image.asset(
                                     'assets/images/profile.jpg',
@@ -1059,95 +1010,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
     );
   }
 
-  Widget _buildEducationSection() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Eğitim Bilgileri',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Diploma Selection
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Text(
-                    'Diploma',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Text(
-                    '*',
-                    style: TextStyle(
-                      color: Color.fromRGBO(238, 46, 36, 1),
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[50],
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey[300]!),
-                ),
-                child: DropdownButton<String>(
-                  value: _diplomaOptions.contains(_selectedDiploma) ? _selectedDiploma : _diplomaOptions.first,
-                  isExpanded: true,
-                  underline: Container(),
-                  icon: const Icon(Icons.keyboard_arrow_down),
-                  dropdownColor: Colors.white,
-                  items: _diplomaOptions.map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text(value),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    setState(() {
-                      _selectedDiploma = newValue!;
-                    });
-                  },
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildDocumentsSection() {
     return Container(
       width: double.infinity,
@@ -1601,27 +1463,36 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
   bool _matchesAttachmentType(String type, String documentType) {
     switch (documentType) {
       case 'id_front':
-        return type.contains('IDENTITY_FRONT') ||
+        return type.contains('IDENTITY_DOCUMENT_FRONT') ||
+            type == 'IDENTITY_DOCUMENT' ||
+            type.contains('IDENTITY_FRONT') ||
             type.contains('ID_FRONT') ||
             type.contains('ID_CARD_FRONT') ||
             type.contains('NUFUS_ON');
       case 'id_back':
-        return type.contains('IDENTITY_BACK') ||
+        return type.contains('IDENTITY_DOCUMENT_BACK') ||
+            type.contains('IDENTITY_BACK') ||
             type.contains('ID_BACK') ||
             type.contains('ID_CARD_BACK') ||
             type.contains('NUFUS_ARKA');
       case 'contract':
-        return type.contains('CONTRACT') ||
+        return type.contains('CONTRACT_DOCUMENT') ||
+            type.contains('CONTRACT') ||
             type.contains('SOZLESME') ||
             type.contains('AGREEMENT');
       case 'diploma':
-        return type.contains('DIPLOMA');
+        return type.contains('GRADUATION_DOCUMENT') || type.contains('DIPLOMA');
       case 'criminal_record':
         return type.contains('CRIMINAL');
       case 'professional_certificate':
-        return type.contains('PROFESSIONAL');
+        return type.contains('PROFESSIONAL_COMPOTENCE') ||
+            type.contains('PROFESSIONAL_COMPETENCE') ||
+            type.contains('PROFESSIONAL');
       case 'real_estate_permit':
-        return type.contains('REAL_ESTATE') || type.contains('PERMIT');
+        return type.contains('REAL_ESTATE_TRADE') ||
+            type.contains('REAL_ESTATE') ||
+            type.contains('AUTHORIZATION') ||
+            type.contains('PERMIT');
       default:
         return false;
     }
@@ -1630,19 +1501,19 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
   String _attachmentTypeFor(String documentType) {
     switch (documentType) {
       case 'id_front':
-        return 'IDENTITY_FRONT';
+        return 'IDENTITY_DOCUMENT_FRONT';
       case 'id_back':
-        return 'IDENTITY_BACK';
+        return 'IDENTITY_DOCUMENT_BACK';
       case 'contract':
-        return 'CONTRACT';
+        return 'CONTRACT_DOCUMENT';
       case 'diploma':
-        return 'DIPLOMA';
+        return 'GRADUATION_DOCUMENT';
       case 'criminal_record':
         return 'CRIMINAL_RECORD';
       case 'professional_certificate':
-        return 'PROFESSIONAL_CERTIFICATE';
+        return 'PROFESSIONAL_COMPOTENCE_CERTIFICATE';
       case 'real_estate_permit':
-        return 'REAL_ESTATE_PERMIT';
+        return 'REAL_ESTATE_TRADE_AUTHORIZATION_CERTIFICATE';
       default:
         return documentType.toUpperCase();
     }
@@ -1703,7 +1574,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
   }
 
   Future<void> _downloadDocument(String s3Id) async {
-    final url = Uri.parse(ImageUtils.getS3FileUrl(s3Id));
+    final origin = EnvApi.webNextApiOrigin;
+    final encoded = Uri.encodeQueryComponent(s3Id.trim());
+    final raw = origin != null && origin.isNotEmpty
+        ? '$origin/api/retrieve-file/?name=$encoded'
+        : ImageUtils.getS3FileUrl(s3Id);
+    final url = Uri.parse(raw);
     final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       _showErrorMessage('Belge açılamadı');
@@ -2111,10 +1987,72 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
         .trim();
   }
 
+  String _formatPhoneForDisplay(String tel) {
+    final trimmed = tel.trim();
+    if (trimmed.isEmpty || trimmed == '0') return '';
+    if (trimmed.contains('(')) return trimmed;
+    var digits = trimmed.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('90') && digits.length > 10) {
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0') && digits.length >= 11) {
+      digits = digits.substring(1);
+    }
+    if (digits.length > 10) digits = digits.substring(0, 10);
+    if (digits.length < 10) return trimmed;
+    return '+90 (${digits.substring(0, 3)}) ${digits.substring(3, 6)}-${digits.substring(6)}';
+  }
+
+  String? _eidsForSave() {
+    final typed = _ttbsController.text.trim();
+    final original = _userProfile?.eids;
+    final nested = _userProfile?.detail.detail;
+    final nestedTtbs = nested is Map
+        ? (nested['ttbs_number'] ?? nested['ttbsNumber'])?.toString().trim() ?? ''
+        : '';
+    if (nestedTtbs.isNotEmpty) return original;
+    if (typed.isEmpty) return original;
+    return typed;
+  }
+
+  dynamic _nestedDetailForSave() {
+    final current = _userProfile?.detail.detail;
+    final map = current is Map
+        ? Map<String, dynamic>.from(current)
+        : <String, dynamic>{};
+    final ttbs = _ttbsController.text.trim();
+    if (ttbs.isNotEmpty) map['ttbs_number'] = ttbs;
+    return map.isEmpty ? current : map;
+  }
+
+  String _readTtbs(UserProfileModel userProfile) {
+    final nested = userProfile.detail.detail;
+    if (nested is Map) {
+      final value = nested['ttbs_number'] ?? nested['ttbsNumber'];
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return userProfile.eids?.trim() ?? '';
+  }
+
+  String? _matchOption(List<String> options, String raw) {
+    final value = raw.trim().toLowerCase();
+    if (value.isEmpty) return null;
+    for (final option in options) {
+      if (option.trim().toLowerCase() == value) return option;
+    }
+    return null;
+  }
+
+  void _ensureOption(List<String> options, String value) {
+    final text = value.trim();
+    if (text.isEmpty) return;
+    if (_matchOption(options, text) == null) options.insert(0, text);
+  }
+
   void _populateFormFields(UserProfileModel userProfile) {
     _nameController.text = userProfile.name;
     _surnameController.text = userProfile.surname;
-    _phoneController.text = userProfile.tel;
+    _phoneController.text = _formatPhoneForDisplay(userProfile.tel);
     _professionController.text = userProfile.detail.profession?.description ??
         userProfile.typeDescription;
     _selectedProfessionCode = userProfile.detail.profession?.code;
@@ -2126,9 +2064,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
     _instagramController.text = userProfile.detail.socialMedia?.instagram ?? '';
     _xController.text = userProfile.detail.socialMedia?.x ?? '';
     _linkedinController.text = userProfile.detail.socialMedia?.linkedin ?? '';
-    _ttbsController.text = userProfile.eids ?? '';
+    _ttbsController.text = _readTtbs(userProfile);
 
-    _existingAttachments = _parseAttachments(userProfile.attachments);
+    _existingAttachments = [
+      ..._parseAttachments(userProfile.attachments),
+      ..._parseAttachments(userProfile.detail.rawAttachments),
+    ];
     final nested = userProfile.detail.detail;
     if (nested is Map && nested['attachments'] != null) {
       _existingAttachments = [
@@ -2140,13 +2081,20 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
 
     // Adres bilgileri
     if (userProfile.address.uavtAddress != null) {
-      _selectedCity = userProfile.address.uavtAddress!.provinceName.toUpperCase();
-      _selectedDistrict = userProfile.address.uavtAddress!.districtName;
-      _selectedNeighborhood = userProfile.address.uavtAddress!.quarterName;
+      final uavt = userProfile.address.uavtAddress!;
+      _selectedCity = _matchOption(_cities, uavt.provinceName) ?? uavt.provinceName;
+      _ensureOption(_cities, _selectedCity);
+      _selectedDistrict = _matchOption(_districts[_selectedCity] ?? [], uavt.districtName) ??
+          uavt.districtName;
+      _ensureOption(_districts.putIfAbsent(_selectedCity, () => []), _selectedDistrict);
+      _selectedNeighborhood =
+          _matchOption(_neighborhoods[_selectedDistrict] ?? [], uavt.quarterName) ??
+              uavt.quarterName;
+      _ensureOption(
+        _neighborhoods.putIfAbsent(_selectedDistrict, () => []),
+        _selectedNeighborhood,
+      );
     }
-
-    // Eğitim bilgileri
-    _selectedDiploma = userProfile.detail.education?.description ?? 'Lisans';
 
     // İletişim izni
     _allowCompanyContact = userProfile.detail.marketingCommunicationPermission;
@@ -2219,12 +2167,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
       linkedin: _linkedinController.text.isNotEmpty ? _linkedinController.text : null,
     );
 
-    // Güncellenmiş eğitim bilgileri
-    final updatedEducation = UserEducationModel(
-      id: _userProfile!.detail.education?.id ?? '',
-      code: _getEducationCode(_selectedDiploma),
-      description: _selectedDiploma,
-    );
+    // Eğitim seviyesi web formunda yok; kayıtlı değeri olduğu gibi koru.
+    final updatedEducation = _userProfile!.detail.education;
 
     // Güncellenmiş meslek bilgileri
     final updatedProfession = UserProfessionModel(
@@ -2253,7 +2197,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
       marketingCommunicationPermission: _allowCompanyContact,
       rating: _userProfile!.detail.rating,
       logo: _userProfile!.detail.logo,
-      detail: _userProfile!.detail.detail,
+      detail: _nestedDetailForSave(),
     );
 
     // Güncellenmiş adres bilgileri
@@ -2308,28 +2252,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
       officeRegion: _userProfile!.officeRegion,
       roles: _userProfile!.roles,
       permissions: _userProfile!.permissions,
-      eids: _ttbsController.text.trim().isEmpty
-          ? _userProfile!.eids
-          : _ttbsController.text.trim(),
+      eids: _eidsForSave(),
       isAdmin: _userProfile!.isAdmin,
     );
-  }
-
-  String _getEducationCode(String education) {
-    switch (education) {
-      case 'Lise':
-        return 'HIGH_SCHOOL';
-      case 'Ön Lisans':
-        return 'ASSOCIATE';
-      case 'Lisans':
-        return 'BACHELOR';
-      case 'Yüksek Lisans':
-        return 'MASTER';
-      case 'Doktora':
-        return 'POST_GRADUATE';
-      default:
-        return 'BACHELOR';
-    }
   }
 
   void _showPasswordResetDialog() {
@@ -2524,5 +2449,71 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen>
     } catch (e) {
       _showErrorMessage('Fotoğraf seçilirken bir hata oluştu: $e');
     }
+  }
+}
+
+class _AccountProfilePhoto extends StatefulWidget {
+  final String pictureId;
+
+  const _AccountProfilePhoto({required this.pictureId});
+
+  @override
+  State<_AccountProfilePhoto> createState() => _AccountProfilePhotoState();
+}
+
+class _AccountProfilePhotoState extends State<_AccountProfilePhoto> {
+  int _urlIndex = 0;
+  bool _advancing = false;
+
+  List<String> _urls() {
+    final id = widget.pictureId.trim();
+    if (id.isEmpty) return const [];
+    if (id.startsWith('http')) return [id];
+    final encoded = Uri.encodeQueryComponent(id);
+    final urls = <String>[];
+    final origin = EnvApi.webNextApiOrigin;
+    if (origin != null && origin.isNotEmpty) {
+      urls.add('$origin/api/retrieve-file/?name=$encoded');
+      urls.add('$origin/api/retrieve-file?name=$encoded&type=image');
+    }
+    final direct = ImageUtils.getS3FileUrl(id);
+    if (direct.isNotEmpty) urls.add(direct);
+    urls.addAll(ImageUtils.getAlternativeImageUrls(id));
+    final seen = <String>{};
+    return urls.where(seen.add).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = _urls();
+    if (urls.isEmpty || _urlIndex >= urls.length) {
+      return Container(
+        color: Colors.grey[200],
+        child: const Icon(Icons.person, size: 60, color: Colors.grey),
+      );
+    }
+    return Image.network(
+      urls[_urlIndex],
+      fit: BoxFit.cover,
+      width: 120,
+      height: 120,
+      headers: const {'User-Agent': 'com.zecorner.app'},
+      errorBuilder: (_, __, ___) {
+        if (!_advancing && _urlIndex < urls.length - 1) {
+          _advancing = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() {
+              _urlIndex++;
+              _advancing = false;
+            });
+          });
+        }
+        return Container(
+          color: Colors.grey[200],
+          child: const Icon(Icons.person, size: 60, color: Colors.grey),
+        );
+      },
+    );
   }
 }

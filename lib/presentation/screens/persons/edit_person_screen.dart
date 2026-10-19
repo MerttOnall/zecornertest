@@ -86,6 +86,10 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
   String? _criminalRecordFileId;
   String? _professionalCertificateFileId;
   String? _realEstatePermitFileId;
+  final Map<String, String> _loadedDocTypes = {};
+  List<Map<String, dynamic>> _loadedAttachments = [];
+  String? _loadedProfessionCode;
+  String? _loadedEducationCode;
   bool _isUploadingFile = false;
 
   // Connected person autocomplete
@@ -106,8 +110,10 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
 
   // Adres Bilgileri - Ülke (Türkiye varsayılan)
   String? _selectedAddressCountry;
-  /// Uyruk alanı (API nationality); adres ülkesinden bağımsız
-  String? _selectedNationality;
+  /// Kayıtlı uyruk kodu. Alan kaldırıldı; kayıt silinmesin diye saklanır.
+  String? _loadedNationality;
+  String? _addressCountryCode;
+  bool _personBound = false;
 
   // Person type search
   final TextEditingController _personTypeSearchController = TextEditingController();
@@ -171,81 +177,474 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_person == null) {
-      _person = ModalRoute.of(context)?.settings.arguments as Person?;
-      if (_person != null) {
-        // Populate form controllers from person data
-        _firstNameController.text = _person!.firstName;
-        _lastNameController.text = _person!.lastName;
-        _emailController.text = _person!.email;
-        _phoneController.text = _person!.phone;
-        _tcNumberController.text = _person!.tcNumber;
-        _birthDateController.text = _parseBirthDate(_person!.birthDate);
-        _addressController.text = _person!.address;
-        _experienceController.text = _person!.experience;
-        _instagramController.text = '';
-        _facebookController.text = '';
-        _twitterController.text = '';
-        _linkedinController.text = '';
-        _connectedPersonController.text = _person!.companyName;
-        _connectedOfficeContactNo = _person!.connectedContactNo;
-        _pastExperienceController.text = '';
-        _coverLetterController.text = '';
-        _referencesController.text = '';
-        _companyInfoController.text = '';
+    if (_personBound) return;
+    _personBound = true;
+    _person = ModalRoute.of(context)?.settings.arguments as Person?;
+    if (_person == null) return;
+    _fillFromListPerson(_person!);
+    _loadFullContact();
+  }
 
-        // Debug: Print person's city data
-        print('Person city: "${_person!.city}"');
-        print('Person district: "${_person!.district}"');
-        
-        // Set gender from API (sex değeri: 1=Erkek, 2=Kadın veya null)
-        // Ancak _person.gender string olabilir, kontrol edelim
-        _selectedGender = null; // Default null (seçili değil)
+  void _fillFromListPerson(Person person) {
+    _firstNameController.text = person.firstName;
+    _lastNameController.text = person.lastName;
+    _emailController.text = person.email;
+    _phoneController.text = _formatPhoneForDisplay(person.phone);
+    _tcNumberController.text = person.tcNumber;
+    _birthDateController.text = _parseBirthDate(person.birthDate);
+    _loadedAttachments = person.attachments ?? [];
+    _applyExistingDocuments(_loadedAttachments);
+    _addressController.text = person.address;
+    _experienceController.text = person.experience;
+    _connectedPersonController.text = person.companyName;
+    _connectedOfficeContactNo = person.connectedContactNo;
+    final nat = person.nationality.trim().toUpperCase();
+    _loadedNationality = nat.isEmpty ? null : nat;
+    _isForeignNational = nat.isNotEmpty && nat != 'TR';
 
-        // Initialize form model
-        _formModel = PersonEditFormModel(
-          firstName: StringField(_person!.firstName),
-          lastName: StringField(_person!.lastName),
-          email: StringField(_person!.email),
-          phone: StringField(_person!.phone),
-          tcNumber: StringField(_person!.tcNumber),
-          birthDate: StringField(_parseBirthDate(_person!.birthDate)),
-          address: StringField(_person!.address),
-          experience: StringField(_person!.experience),
-          instagram: StringField(''),
-          facebook: StringField(''),
-          twitter: StringField(''),
-          linkedin: StringField(''),
-          connectedPerson: StringField(_person!.companyName),
-          pastExperience: StringField(''),
-          coverLetter: StringField(''),
-          references: StringField(''),
-          companyInfo: StringField(''),
-          selectedPersonType: _getPersonTypeFromString(_person!.personType),
-          selectedConsultantLevel: null,
-          selectedProfession: _getProfessionFromString(_person!.profession),
-          selectedEducation: _getEducationFromString(_person!.education),
-          selectedCity: _person!.city.isNotEmpty ? _person!.city : null,
-          selectedDistrict:
-              _person!.district.isNotEmpty ? _person!.district : null,
-          selectedNeighborhood: null,
-          isActive: _person!.isActive,
-          campaignConsent: true,
-          isCustomConsultant: false,
-        );
+    _formModel = PersonEditFormModel(
+      firstName: StringField(person.firstName),
+      lastName: StringField(person.lastName),
+      email: StringField(person.email),
+      phone: StringField(person.phone),
+      tcNumber: StringField(person.tcNumber),
+      birthDate: StringField(_parseBirthDate(person.birthDate)),
+      address: StringField(person.address),
+      experience: StringField(person.experience),
+      instagram: StringField(''),
+      facebook: StringField(''),
+      twitter: StringField(''),
+      linkedin: StringField(''),
+      connectedPerson: StringField(person.companyName),
+      pastExperience: StringField(''),
+      coverLetter: StringField(''),
+      references: StringField(''),
+      companyInfo: StringField(''),
+      selectedPersonType: person.personType.trim().isEmpty ? null : person.personType,
+      selectedConsultantLevel: null,
+      selectedProfession: person.profession.trim().isEmpty ? null : person.profession,
+      selectedEducation: person.education.trim().isEmpty ? null : person.education,
+      selectedCity: person.city.trim().isEmpty ? null : person.city,
+      selectedDistrict: person.district.trim().isEmpty ? null : person.district,
+      selectedNeighborhood: null,
+      isActive: person.isActive,
+      campaignConsent: true,
+      isCustomConsultant: false,
+    );
+    if (_countries.isNotEmpty) _assignCountrySelectionsFromPerson();
+  }
 
-        // Check existing files from API
-        _checkExistingFiles();
+  Future<void> _loadFullContact() async {
+    final id = int.tryParse(_person?.id ?? '');
+    if (id == null || id <= 0) return;
+    final result = await _contactRepository.getContactById(id);
+    if (!mounted) return;
+    result.fold((_) {}, (contact) {
+      if (!mounted) return;
+      setState(() {
+        try {
+          _applyContact(contact);
+        } catch (_) {}
+        final birth = _parseBirthDate(contact.birthday);
+        if (birth.isNotEmpty) _birthDateController.text = birth;
+        _loadedAttachments = contact.detailAttachments ?? _loadedAttachments;
+        _applyExistingDocuments(_loadedAttachments);
+      });
+      _alignSelections();
+      _restoreAddressCascade();
+    });
+  }
 
-        if (_countries.isNotEmpty) {
-          setState(_assignCountrySelectionsFromPerson);
-        }
-        
-        // Form model already initialized
-      } else {
-        // New person - form model already initialized
+  void _setText(TextEditingController controller, String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isNotEmpty) controller.text = text;
+  }
+
+  String? _keep(String? incoming, String? current) {
+    final next = incoming?.trim() ?? '';
+    return next.isNotEmpty ? next : current;
+  }
+
+  void _applyContact(ContactApiModel contact) {
+    _setText(_firstNameController, contact.name);
+    _setText(_lastNameController, contact.surname);
+    _setText(_emailController, contact.eMail);
+    _setText(_phoneController, _formatPhoneForDisplay(contact.tel));
+    _setText(_tcNumberController, contact.tcIdNumber);
+    final birth = _parseBirthDate(contact.birthday);
+    if (birth.isNotEmpty) _birthDateController.text = birth;
+    _setText(_addressController, contact.address);
+    _setText(_experienceController, contact.sectoralExperience?.toString());
+    _setText(_instagramController, contact.instagram);
+    _setText(_facebookController, contact.facebook);
+    _setText(_twitterController, contact.twitter);
+    _setText(_linkedinController, contact.linkedin);
+    _setText(_connectedPersonController, contact.connectedContactTitle);
+    if (contact.connectedContact != null && contact.connectedContact! > 0) {
+      _connectedOfficeContactNo = contact.connectedContact;
+    }
+    _setText(_pastExperienceController, contact.pastExperience);
+    _setText(_coverLetterController, contact.coverLetter ?? contact.aboutMe);
+    _setText(_referencesController, contact.references);
+    _setText(_companyInfoController, contact.whereYouHeardUs);
+    _setText(_postCodeController, contact.postCode);
+    if ((contact.picture ?? '').trim().isNotEmpty) {
+      _profileImageId = contact.picture;
+    }
+    _applyExistingDocuments(contact.detailAttachments);
+
+    _addressCountryCode = contact.country;
+    final nat = contact.nationality.trim().toUpperCase();
+    _loadedNationality = nat.isEmpty ? _loadedNationality : nat;
+    _isForeignNational = contact.isForeignNationality ??
+        (nat.isNotEmpty && nat != 'TR');
+    _selectedGender = contact.sex == 1 ? 'M' : contact.sex == 2 ? 'F' : null;
+    _selectedMaritalStatus = _maritalLabel(contact.maritalStatus);
+    _selectedBodySize = _bodySizeLabel(contact.size);
+    _selectedBirthPlace = contact.birthPlaceName ??
+        (contact.birthPlaceCode != null ? contact.birthPlaceCode.toString() : _selectedBirthPlace);
+    _loadedProfessionCode = contact.professionCode ?? _loadedProfessionCode;
+    _loadedEducationCode = contact.educationCode ?? _loadedEducationCode;
+
+    _formModel = PersonEditFormModel(
+      firstName: StringField(contact.name),
+      lastName: StringField(contact.surname),
+      email: StringField(contact.eMail),
+      phone: StringField(contact.tel),
+      tcNumber: StringField(contact.tcIdNumber ?? ''),
+      birthDate: StringField(_parseBirthDate(contact.birthday)),
+      address: StringField(contact.address ?? ''),
+      experience: StringField(contact.sectoralExperience?.toString() ?? ''),
+      instagram: StringField(contact.instagram ?? ''),
+      facebook: StringField(contact.facebook ?? ''),
+      twitter: StringField(contact.twitter ?? ''),
+      linkedin: StringField(contact.linkedin ?? ''),
+      connectedPerson: StringField(contact.connectedContactTitle ?? ''),
+      pastExperience: StringField(contact.pastExperience ?? ''),
+      coverLetter: StringField(contact.coverLetter ?? contact.aboutMe ?? ''),
+      references: StringField(contact.references ?? ''),
+      companyInfo: StringField(contact.whereYouHeardUs ?? ''),
+      selectedPersonType: contact.typeDescription.trim().isEmpty
+          ? _formModel.selectedPersonType
+          : contact.typeDescription,
+      selectedConsultantLevel: null,
+      selectedProfession:
+          _keep(contact.professionDescription, _formModel.selectedProfession),
+      selectedEducation:
+          _keep(contact.educationDescription, _formModel.selectedEducation),
+      selectedCity: _keep(contact.provinceName ?? contact.city, _formModel.selectedCity),
+      selectedDistrict:
+          _keep(contact.districtName ?? contact.district, _formModel.selectedDistrict),
+      selectedNeighborhood:
+          _keep(contact.quarterName, _formModel.selectedNeighborhood),
+      isActive: contact.status == 1,
+      campaignConsent: contact.marketingCommunicationPermission,
+      isCustomConsultant: false,
+    );
+    if (_countries.isNotEmpty) _assignCountrySelectionsFromPerson(overwrite: true);
+  }
+
+  /// Kayıtlı belgeler dosya seçiciyi doldurur. Yeni yükleme aynı yuvanın üstüne yazar.
+  void _applyExistingDocuments(List<Map<String, dynamic>>? attachments) {
+    if (attachments == null || attachments.isEmpty) return;
+    for (final att in attachments.reversed) {
+      final label = [
+        att['type'],
+        att['type_description'],
+        att['description'],
+      ].where((part) => part != null).join(' ');
+      final id = _attachmentFileId(att);
+      if (label.trim().isEmpty || id.isEmpty) continue;
+      if (label.toUpperCase() == 'PICTURE' &&
+          (_profileImageId == null || _profileImageId!.isEmpty)) {
+        _profileImageId = id;
+        continue;
+      }
+      final slot = _slotForAttachmentType(label);
+      if (slot == null) continue;
+      final current = _fileIdFor(slot);
+      if (current != null && current.isNotEmpty) continue;
+      _loadedDocTypes[slot] = (att['type'] ?? label).toString();
+      switch (slot) {
+        case 'diploma':
+          _diplomaFileId = id;
+          break;
+        case 'criminal_record':
+          _criminalRecordFileId = id;
+          break;
+        case 'professional_certificate':
+          _professionalCertificateFileId = id;
+          break;
+        case 'real_estate_permit':
+          _realEstatePermitFileId = id;
+          break;
       }
     }
+  }
+
+  String _attachmentFileId(Map<String, dynamic> att) {
+    final raw = att['attachment'] ??
+        att['s3Id'] ??
+        att['s3_id'] ??
+        att['fileId'] ??
+        att['file_id'] ??
+        att['url'] ??
+        att['path'];
+    final file = raw?.toString().trim() ?? '';
+    if (file.isNotEmpty && file != 'null') return file;
+    final rowId = att['id']?.toString().trim() ?? '';
+    if (rowId.length >= 8 && _slotForAttachmentType(rowId) == null) return rowId;
+    return '';
+  }
+
+  String? _slotForAttachmentType(String raw) {
+    final type = raw
+        .toUpperCase()
+        .replaceAll('İ', 'I')
+        .replaceAll('İ', 'I')
+        .replaceAll('Ş', 'S')
+        .replaceAll('Ğ', 'G')
+        .replaceAll('Ü', 'U')
+        .replaceAll('Ö', 'O')
+        .replaceAll('Ç', 'C');
+    if (type.contains('GRADUATION') ||
+        type.contains('DIPLOMA') ||
+        type.contains('MEZUNIYET')) {
+      return 'diploma';
+    }
+    if (type.contains('CRIMINAL') ||
+        type.contains('ADLI SICIL') ||
+        type.contains('SABIKA')) {
+      return 'criminal_record';
+    }
+    if (type.contains('PROFESSIONAL') ||
+        type.contains('COMPOTENCE') ||
+        type.contains('COMPETENCE') ||
+        type.contains('YETERLILIK') ||
+        type.contains('MESLEKI')) {
+      return 'professional_certificate';
+    }
+    if (type.contains('REAL_ESTATE') ||
+        type.contains('AUTHORIZATION') ||
+        type.contains('PERMIT') ||
+        type.contains('TASINMAZ') ||
+        type.contains('TICARI YETKI')) {
+      return 'real_estate_permit';
+    }
+    return null;
+  }
+
+  String? _fileIdFor(String slot) {
+    switch (slot) {
+      case 'diploma':
+        return _diplomaFileId;
+      case 'criminal_record':
+        return _criminalRecordFileId;
+      case 'professional_certificate':
+        return _professionalCertificateFileId;
+      case 'real_estate_permit':
+        return _realEstatePermitFileId;
+      default:
+        return null;
+    }
+  }
+
+  bool _hasDocument(String slot, PlatformFile? file) {
+    if (file != null) return true;
+    final id = _fileIdFor(slot);
+    if (id != null && id.isNotEmpty) return true;
+    for (final att in _loadedAttachments.reversed) {
+      final label = [
+        att['type'],
+        att['type_description'],
+        att['description'],
+      ].where((part) => part != null).join(' ');
+      if (_slotForAttachmentType(label) != slot) continue;
+      if (_attachmentFileId(att).isNotEmpty) return true;
+    }
+    return false;
+  }
+
+  String? _maritalLabel(String? raw) {
+    switch (raw?.trim().toLowerCase()) {
+      case 'single':
+      case 'bekar':
+        return 'Bekar';
+      case 'married':
+      case 'evli':
+        return 'Evli';
+      case 'divorced':
+      case 'boşanmış':
+      case 'bosanmis':
+        return 'Boşanmış';
+      case 'widowed':
+      case 'widow':
+      case 'dul':
+        return 'Dul';
+      default:
+        if (raw == 'Bekar' || raw == 'Evli' || raw == 'Boşanmış' || raw == 'Dul') {
+          return raw;
+        }
+        return null;
+    }
+  }
+
+  String? _bodySizeLabel(String? raw) {
+    const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+    final up = raw?.trim().toUpperCase();
+    return sizes.contains(up) ? up : null;
+  }
+
+  /// Alanın başında zaten `+90` var. Kontrolde 10 hane durur.
+  String _formatPhoneForDisplay(String tel) {
+    final trimmed = tel.trim();
+    if (trimmed.isEmpty || trimmed == '0') return '';
+    var digits = trimmed.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('90') && digits.length > 10) {
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0') && digits.length >= 11) {
+      digits = digits.substring(1);
+    }
+    if (digits.length > 10) digits = digits.substring(0, 10);
+    return digits;
+  }
+
+  String? _provinceNameFor(String? raw) {
+    final value = raw?.trim() ?? '';
+    if (value.isEmpty || _provinces.isEmpty) return raw;
+    for (final province in _provinces) {
+      if (province.name.toLowerCase() == value.toLowerCase() ||
+          province.code.toString() == value) {
+        return province.name;
+      }
+    }
+    return raw;
+  }
+
+  String? _resolveProfession() {
+    final label = _formModel.selectedProfession?.trim();
+    final code = _loadedProfessionCode?.trim();
+    for (final item in _professions) {
+      final sameLabel = label != null &&
+          label.isNotEmpty &&
+          item.description.trim().toLowerCase() == label.toLowerCase();
+      final sameCode = code != null &&
+          code.isNotEmpty &&
+          (item.code == code || item.id == code);
+      if (sameLabel || sameCode) return item.description;
+    }
+    if (label != null && label.isNotEmpty) {
+      if (_professions.isNotEmpty) {
+        _professions = [
+          RefProfessionModel(
+            id: code ?? label,
+            code: code ?? label,
+            description: label,
+          ),
+          ..._professions,
+        ];
+      }
+      return label;
+    }
+    return _formModel.selectedProfession;
+  }
+
+  String? _resolveEducation() {
+    final label = _formModel.selectedEducation?.trim();
+    final code = _loadedEducationCode?.trim();
+    for (final item in _educations) {
+      final sameLabel = label != null &&
+          label.isNotEmpty &&
+          item.description.trim().toLowerCase() == label.toLowerCase();
+      final sameCode = code != null &&
+          code.isNotEmpty &&
+          (item.code == code || item.id == code);
+      if (sameLabel || sameCode) return item.description;
+    }
+    if (label != null && label.isNotEmpty) {
+      if (_educations.isNotEmpty) {
+        _educations = [
+          RefEducationModel(
+            id: code ?? label,
+            code: code ?? label,
+            description: label,
+          ),
+          ..._educations,
+        ];
+      }
+      return label;
+    }
+    return _formModel.selectedEducation;
+  }
+
+  String? _resolvePersonType() {
+    final label = _formModel.selectedPersonType?.trim();
+    if (label == null || label.isEmpty || _contactTypes.isEmpty) {
+      return _formModel.selectedPersonType;
+    }
+    for (final type in _contactTypes) {
+      if (type.description.trim().toLowerCase() == label.toLowerCase() ||
+          type.code.toString() == label) {
+        return type.description;
+      }
+    }
+    return _formModel.selectedPersonType;
+  }
+
+  void _alignSelections() {
+    final profession = _resolveProfession();
+    final education = _resolveEducation();
+    final personType = _resolvePersonType();
+    final city = _provinceNameFor(_formModel.selectedCity);
+    final birth = _provinceNameFor(_selectedBirthPlace);
+    if (!mounted) return;
+    setState(() {
+      _formModel = PersonEditFormModel(
+        firstName: _formModel.firstName,
+        lastName: _formModel.lastName,
+        email: _formModel.email,
+        phone: _formModel.phone,
+        tcNumber: _formModel.tcNumber,
+        birthDate: _formModel.birthDate,
+        address: _formModel.address,
+        experience: _formModel.experience,
+        instagram: _formModel.instagram,
+        facebook: _formModel.facebook,
+        twitter: _formModel.twitter,
+        linkedin: _formModel.linkedin,
+        connectedPerson: _formModel.connectedPerson,
+        pastExperience: _formModel.pastExperience,
+        coverLetter: _formModel.coverLetter,
+        references: _formModel.references,
+        companyInfo: _formModel.companyInfo,
+        selectedPersonType: personType ?? _formModel.selectedPersonType,
+        selectedConsultantLevel: _formModel.selectedConsultantLevel,
+        selectedProfession: profession ?? _formModel.selectedProfession,
+        selectedEducation: education ?? _formModel.selectedEducation,
+        selectedCity: city ?? _formModel.selectedCity,
+        selectedDistrict: _formModel.selectedDistrict,
+        selectedNeighborhood: _formModel.selectedNeighborhood,
+        isActive: _formModel.isActive,
+        campaignConsent: _formModel.campaignConsent,
+        isCustomConsultant: _formModel.isCustomConsultant,
+      );
+      if (birth != null) _selectedBirthPlace = birth;
+    });
+  }
+
+  Future<void> _restoreAddressCascade() async {
+    final city = _formModel.selectedCity;
+    if (city == null || city.isEmpty || _provinces.isEmpty) return;
+    ProvinceModel? province;
+    for (final item in _provinces) {
+      if (item.name.toLowerCase() == city.toLowerCase() ||
+          item.code.toString() == city) {
+        province = item;
+        break;
+      }
+    }
+    if (province == null) return;
+    await _loadDistrictsByProvince(province.code, restoreAddress: true);
   }
 
   @override
@@ -272,94 +671,24 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
     super.dispose();
   }
 
-  // Helper methods for string conversion
-  String _getPersonTypeFromString(String personType) {
-    if (personType.contains("Gayrimenkul Danışman")) {
-      return "Gayrimenkul Danışmanı";
-    } else if (personType.contains("Müşteri")) {
-      return "Müşteri";
-    } else if (personType.contains("Danışman")) {
-      return "Danışman";
-    } else {
-      return "Potansiyel Müşteri";
-    }
-  }
-
-  String _getProfessionFromString(String profession) {
-    if (profession.contains("Akademisyen")) {
-      return "Öğretmen";
-    } else if (profession.contains("Mühendis")) {
-      return "Mühendis";
-    } else if (profession.contains("Doktor")) {
-      return "Doktor";
-    } else if (profession.contains("Avukat")) {
-      return "Avukat";
-    } else if (profession.contains("Emlak")) {
-      return "Emlak Uzmanı";
-    } else {
-      return "Diğer";
-    }
-  }
-
-  String _getEducationFromString(String education) {
-    if (education.contains("Doktora")) {
-      return "Doktora";
-    } else if (education.contains("Yüksek Lisans")) {
-      return "Yüksek Lisans";
-    } else if (education.contains("Üniversite")) {
-      return "Üniversite";
-    } else if (education.contains("Lise")) {
-      return "Lise";
-    } else if (education.contains("Ortaokul")) {
-      return "Ortaokul";
-    } else if (education.contains("İlkokul")) {
-      return "İlkokul";
-    } else {
-      return "Üniversite";
-    }
-  }
-
   // Parse birth date from various formats to GG/AA/YYYY
   String _parseBirthDate(String? dateString) {
-    if (dateString == null || dateString.isEmpty) {
-      return '';
+    final raw = dateString?.trim() ?? '';
+    if (raw.isEmpty || raw == 'null') return '';
+
+    final iso = RegExp(r'(\d{4})-(\d{2})-(\d{2})').firstMatch(raw);
+    if (iso != null) {
+      return '${iso.group(3)}/${iso.group(2)}/${iso.group(1)}';
     }
 
-    try {
-      // Try to parse ISO 8601 format (2001-11-01T22:00:00.000Z)
-      if (dateString.contains('T')) {
-        final dateTime = DateTime.parse(dateString);
-        return '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year}';
-      }
-      
-      // Try to parse YYYY-MM-DD format
-      if (dateString.contains('-') && dateString.length >= 10) {
-        final parts = dateString.split('-');
-        if (parts.length >= 3) {
-          final year = int.tryParse(parts[0]);
-          final month = int.tryParse(parts[1]);
-          final day = int.tryParse(parts[2].split(' ')[0]); // Handle time part if exists
-          
-          if (year != null && month != null && day != null) {
-            return '${day.toString().padLeft(2, '0')}/${month.toString().padLeft(2, '0')}/${year}';
-          }
-        }
-      }
-      
-      // Try to parse DD/MM/YYYY format (already correct)
-      if (dateString.contains('/')) {
-        final parts = dateString.split('/');
-        if (parts.length == 3) {
-          return dateString; // Already in correct format
-        }
-      }
-      
-      // If all parsing fails, return empty string
-      return '';
-    } catch (e) {
-      print('Error parsing birth date: $dateString - $e');
-      return '';
+    final dotted = RegExp(r'(\d{1,2})[./](\d{1,2})[./](\d{4})').firstMatch(raw);
+    if (dotted != null) {
+      final day = dotted.group(1)!.padLeft(2, '0');
+      final month = dotted.group(2)!.padLeft(2, '0');
+      return '$day/$month/${dotted.group(3)}';
     }
+
+    return '';
   }
 
   // Load reference data from API
@@ -452,13 +781,8 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
 
           _isLoadingRefData = false;
         });
-        // Kişi adres bilgisi varsa ilçe/mahalle yükle (web gibi cascade)
-        if (mounted && _formModel.selectedCity != null && _formModel.selectedCity!.isNotEmpty && _provinces.isNotEmpty) {
-          try {
-            final province = _provinces.firstWhere((p) => p.name == _formModel.selectedCity);
-            _loadDistrictsByProvince(province.code, restoreAddress: true);
-          } catch (_) {}
-        }
+        _alignSelections();
+        if (mounted) _restoreAddressCascade();
       }
     } catch (e) {
       if (mounted) {
@@ -476,8 +800,9 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
   }
 
   /// Referans ülkeler yüklendikten sonra adres ülkesi ve uyruk seçimlerini doldurur.
-  void _assignCountrySelectionsFromPerson() {
+  void _assignCountrySelectionsFromPerson({bool overwrite = false}) {
     if (_countries.isEmpty) return;
+    if (!overwrite && _selectedAddressCountry != null) return;
     final turkeyList = _countries.where((c) =>
         c.name == 'Türkiye Cumhuriyeti' || c.name == 'Türkiye').toList();
     final turkeyName = turkeyList.isNotEmpty ? turkeyList.first.name : null;
@@ -491,22 +816,9 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
       return null;
     }
 
-    if (_person != null) {
-      _selectedAddressCountry = nameForIso(_person!.country) ??
-          turkeyName ??
-          (_countries.isNotEmpty ? _countries.first.name : null);
-      final natIso =
-          _person!.nationality.isNotEmpty ? _person!.nationality : null;
-      _selectedNationality = nameForIso(natIso) ?? turkeyName;
-    } else {
-      if (_selectedAddressCountry == null) {
-        _selectedAddressCountry = turkeyName ??
-            (_countries.isNotEmpty ? _countries.first.name : null);
-      }
-      if (_selectedNationality == null) {
-        _selectedNationality = turkeyName;
-      }
-    }
+    _selectedAddressCountry = nameForIso(_addressCountryCode ?? _person?.country) ??
+        turkeyName ??
+        (_countries.isNotEmpty ? _countries.first.name : null);
   }
 
   // Load districts by province
@@ -533,11 +845,34 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
               _districts = districtsResult.districts;
               _isLoadingDistricts = false;
               // Kişi ilçe seçiliyse mahalleleri district.quarters'tan al (web API)
-              if (_formModel.selectedDistrict != null && _formModel.selectedDistrict!.isNotEmpty) {
-                try {
-                  final district = _districts.firstWhere((d) => d.name == _formModel.selectedDistrict);
+              final wantedDistrict = _formModel.selectedDistrict;
+              if (wantedDistrict != null && wantedDistrict.isNotEmpty) {
+                DistrictModel? district;
+                for (final item in _districts) {
+                  if (item.name.toLowerCase() == wantedDistrict.toLowerCase() ||
+                      item.code.toString() == wantedDistrict) {
+                    district = item;
+                    break;
+                  }
+                }
+                if (district != null) {
+                  if (district.name != wantedDistrict) {
+                    _formModel = _formModel.copyWith(selectedDistrict: district.name);
+                  }
                   _quarters = district.quarters;
-                } catch (_) {}
+                  final wantedQuarter = _formModel.selectedNeighborhood;
+                  if (wantedQuarter != null && wantedQuarter.isNotEmpty) {
+                    for (final quarter in _quarters) {
+                      if (quarter.name.toLowerCase() == wantedQuarter.toLowerCase() ||
+                          quarter.code.toString() == wantedQuarter) {
+                        if (quarter.name != wantedQuarter) {
+                          _formModel = _formModel.copyWith(selectedNeighborhood: quarter.name);
+                        }
+                        break;
+                      }
+                    }
+                  }
+                }
               }
             });
           }
@@ -1356,7 +1691,7 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
     }
 
     // 19. Validate criminal record (ZORUNLU)
-    if (_criminalRecordFile == null) {
+    if (!_hasDocument('criminal_record', _criminalRecordFile)) {
       setState(() {
         _criminalRecordError = 'Adli sicil kaydı zorunludur.';
       });
@@ -1364,7 +1699,7 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
     }
 
     // 20. Validate professional certificate (ZORUNLU)
-    if (_professionalCertificateFile == null) {
+    if (!_hasDocument('professional_certificate', _professionalCertificateFile)) {
       setState(() {
         _professionalCertificateError = 'Mesleki yeterlilik belgesi zorunludur.';
       });
@@ -1461,17 +1796,22 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
       switch (documentType) {
         case 'diploma':
           _diplomaFile = null;
+          _diplomaFileId = null;
           break;
         case 'criminal_record':
           _criminalRecordFile = null;
+          _criminalRecordFileId = null;
           break;
         case 'professional_certificate':
           _professionalCertificateFile = null;
+          _professionalCertificateFileId = null;
           break;
         case 'real_estate_permit':
           _realEstatePermitFile = null;
+          _realEstatePermitFileId = null;
           break;
       }
+      _loadedDocTypes.remove(documentType);
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1602,19 +1942,14 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
               ? addressCountry.code
               : 'TR';
 
-      RefCountryModel? nationalityCountry;
-      if (_selectedNationality != null) {
-        for (final c in _countries) {
-          if (c.name == _selectedNationality) {
-            nationalityCountry = c;
-            break;
-          }
-        }
-      }
-      final nationalityIso =
-          (nationalityCountry != null && nationalityCountry.code.isNotEmpty)
-              ? nationalityCountry.code
-              : countryIso;
+      final storedNationality = _loadedNationality?.trim().toUpperCase();
+      final nationalityIso = _isForeignNational
+          ? ((storedNationality != null &&
+                  storedNationality.isNotEmpty &&
+                  storedNationality != 'TR')
+              ? storedNationality
+              : countryIso)
+          : 'TR';
 
       // Create ContactApiModel from form data
       final contact = ContactApiModel(
@@ -1702,25 +2037,27 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
       }
       if (_diplomaFileId != null && _diplomaFileId!.isNotEmpty) {
         files.add({
-          'id': 'DIPLOMA',
+          'id': _loadedDocTypes['diploma'] ?? 'GRADUATION_DOCUMENT',
           's3Id': _diplomaFileId,
         });
       }
       if (_criminalRecordFileId != null && _criminalRecordFileId!.isNotEmpty) {
         files.add({
-          'id': 'CRIMINAL_RECORD',
+          'id': _loadedDocTypes['criminal_record'] ?? 'CRIMINAL_RECORD',
           's3Id': _criminalRecordFileId,
         });
       }
       if (_professionalCertificateFileId != null && _professionalCertificateFileId!.isNotEmpty) {
         files.add({
-          'id': 'PROFESSIONAL_CERTIFICATE',
+          'id': _loadedDocTypes['professional_certificate'] ??
+              'PROFESSIONAL_COMPOTENCE_CERTIFICATE',
           's3Id': _professionalCertificateFileId,
         });
       }
       if (_realEstatePermitFileId != null && _realEstatePermitFileId!.isNotEmpty) {
         files.add({
-          'id': 'REAL_ESTATE_PERMIT',
+          'id': _loadedDocTypes['real_estate_permit'] ??
+              'REAL_ESTATE_TRADE_AUTHORIZATION_CERTIFICATE',
           's3Id': _realEstatePermitFileId,
         });
       }
@@ -2890,66 +3227,6 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 16),
-                    // Uyruk (Opsiyonel)
-                    const Text("Uyruk (Opsiyonel)",
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF2C3E50))),
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.grey[200]!, 
-                          width: 1.5
-                        ),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: _isLoadingRefData
-                            ? const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                                child: Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                    SizedBox(width: 12),
-                                    Text("Yükleniyor...", style: TextStyle(color: Colors.grey)),
-                                  ],
-                                ),
-                              )
-                            : DropdownButton<String>(
-                                dropdownColor: Colors.white,
-                                isExpanded: true,
-                                value: _selectedNationality != null &&
-                                        _countries.any((c) => c.name == _selectedNationality)
-                                    ? _selectedNationality
-                                    : null,
-                                hint: const Padding(
-                                  padding: EdgeInsets.only(left: 8),
-                                  child: Text(
-                                    "Seçiniz",
-                                    style: TextStyle(color: Colors.grey),
-                                  ),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
-                                items: _countries.map((RefCountryModel country) {
-                                  return DropdownMenuItem<String>(
-                                    value: country.name,
-                                    child: Text(country.name, style: const TextStyle(fontSize: 14)),
-                                  );
-                                }).toList(),
-                                onChanged: (value) =>
-                                    setState(() => _selectedNationality = value),
-                              ),
-                      ),
-                    ),
-
                     const SizedBox(height: 24),
                     // Adres Bilgileri
                     const Text(
@@ -3261,22 +3538,6 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                     ),
 
                     const SizedBox(height: 20),
-                    // Posta Kodu
-                    TextFormField(
-                      controller: _postCodeController,
-                      decoration: _buildModernInputDecoration(
-                        labelText: "Posta Kodu (Opsiyonel)",
-                        prefixIcon: Icons.local_post_office_outlined,
-                      ),
-                      cursorColor: const Color(0xFFE53935),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(5),
-                      ],
-                    ),
-
-                    const SizedBox(height: 20),
                     // Adres
                     TextFormField(
                       controller: _addressController,
@@ -3399,7 +3660,10 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                             : DropdownButton<String>(
                                 dropdownColor: Colors.white,
                                 isExpanded: true,
-                                value: _formModel.selectedProfession,
+                                value: _professions.any((p) =>
+                                        p.description == _formModel.selectedProfession)
+                                    ? _formModel.selectedProfession
+                                    : null,
                                 hint: const Padding(
                                   padding: EdgeInsets.only(left: 8),
                                   child: Text(
@@ -3488,7 +3752,10 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                             : DropdownButton<String>(
                                 dropdownColor: Colors.white,
                                 isExpanded: true,
-                                value: _formModel.selectedEducation,
+                                value: _educations.any((e) =>
+                                        e.description == _formModel.selectedEducation)
+                                    ? _formModel.selectedEducation
+                                    : null,
                                 hint: Padding(
                                   padding: const EdgeInsets.only(left: 8),
                                   child: Text(
@@ -3615,7 +3882,7 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                     // Diploma
                     const Text("Diploma (Opsiyonel)", style: TextStyle(fontSize: 16)),
                     const SizedBox(height: 8),
-                    _diplomaFile != null
+                    _hasDocument('diploma', _diplomaFile)
                         ? Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -3637,7 +3904,7 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        _diplomaFile!.name,
+                                        _diplomaFile?.name ?? 'Mevcut diploma yüklü',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w500,
                                           fontSize: 14,
@@ -3646,7 +3913,9 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       Text(
-                                        _formatFileSize(_diplomaFile!.size),
+                                        _diplomaFile == null
+                                            ? 'Kayıtlı belge'
+                                            : _formatFileSize(_diplomaFile!.size),
                                         style: TextStyle(
                                           color: Colors.grey[600],
                                           fontSize: 12,
@@ -3723,7 +3992,7 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF2C3E50))),
                     const SizedBox(height: 8),
-                    _criminalRecordFile != null
+                    _hasDocument('criminal_record', _criminalRecordFile)
                         ? Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -3748,7 +4017,8 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        _criminalRecordFile!.name,
+                                        _criminalRecordFile?.name ??
+                                            'Mevcut adli sicil kaydı yüklü',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w500,
                                           fontSize: 14,
@@ -3757,8 +4027,10 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       Text(
-                                        _formatFileSize(
-                                            _criminalRecordFile!.size),
+                                        _criminalRecordFile == null
+                                            ? 'Kayıtlı belge'
+                                            : _formatFileSize(
+                                                _criminalRecordFile!.size),
                                         style: TextStyle(
                                           color: Colors.grey[600],
                                           fontSize: 12,
@@ -3865,7 +4137,8 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF2C3E50))),
                     const SizedBox(height: 8),
-                    _professionalCertificateFile != null
+                    _hasDocument(
+                        'professional_certificate', _professionalCertificateFile)
                         ? Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -3890,7 +4163,8 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        _professionalCertificateFile!.name,
+                                        _professionalCertificateFile?.name ??
+                                            'Mevcut mesleki yeterlilik belgesi yüklü',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w500,
                                           fontSize: 14,
@@ -3899,8 +4173,10 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       Text(
-                                        _formatFileSize(
-                                            _professionalCertificateFile!.size),
+                                        _professionalCertificateFile == null
+                                            ? 'Kayıtlı belge'
+                                            : _formatFileSize(
+                                                _professionalCertificateFile!.size),
                                         style: TextStyle(
                                           color: Colors.grey[600],
                                           fontSize: 12,
@@ -4005,7 +4281,7 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                     const Text("Taşınmaz Ticari Yetki Belgesi (Opsiyonel)",
                         style: TextStyle(fontSize: 16)),
                     const SizedBox(height: 8),
-                    _realEstatePermitFile != null
+                    _hasDocument('real_estate_permit', _realEstatePermitFile)
                         ? Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
@@ -4027,7 +4303,8 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        _realEstatePermitFile!.name,
+                                        _realEstatePermitFile?.name ??
+                                            'Mevcut yetki belgesi yüklü',
                                         style: const TextStyle(
                                           fontWeight: FontWeight.w500,
                                           fontSize: 14,
@@ -4036,8 +4313,10 @@ class _EditPersonScreenState extends State<EditPersonScreen> {
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       Text(
-                                        _formatFileSize(
-                                            _realEstatePermitFile!.size),
+                                        _realEstatePermitFile == null
+                                            ? 'Kayıtlı belge'
+                                            : _formatFileSize(
+                                                _realEstatePermitFile!.size),
                                         style: TextStyle(
                                           color: Colors.grey[600],
                                           fontSize: 12,

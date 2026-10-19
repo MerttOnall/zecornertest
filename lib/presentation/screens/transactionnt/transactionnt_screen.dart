@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:zecorner/presentation/widgets/admin-panel/admin_panel_in_appbar.dart';
+import 'package:zecorner/core/utils/image_utils.dart';
 import 'package:zecorner/infrastructure/list/my_listings_repository.dart';
 import 'package:zecorner/models/list/listing_panel_model.dart';
 import 'package:zecorner/infrastructure/contact/contact_search_repository.dart';
@@ -255,6 +256,9 @@ class TransactionNotificationScreen extends StatefulWidget {
 
 class _TransactionNotificationScreenState extends State<TransactionNotificationScreen> {
   ListingPanelModel? _selectedListing;
+  ListingPreSale? _preSale;
+  bool _preSaleLoading = false;
+  int _preSaleToken = 0;
   String? _selectedClosingType;
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _closingTypeSearchController = TextEditingController();
@@ -364,8 +368,21 @@ class _TransactionNotificationScreenState extends State<TransactionNotificationS
     super.dispose();
   }
 
-  bool get _hasCustomerOwner {
-    return _selectedListing?.contactNo != null && _selectedListing!.contactNo > 0;
+  bool get _hasCustomerOwner => _preSale?.hasOwner == true;
+
+  Future<void> _loadPreSale(String listingId) async {
+    final token = ++_preSaleToken;
+    setState(() {
+      _preSaleLoading = true;
+      _preSale = null;
+    });
+
+    final preSale = await _repository.getPreSale(listingId);
+    if (!mounted || token != _preSaleToken) return;
+    setState(() {
+      _preSale = preSale;
+      _preSaleLoading = false;
+    });
   }
 
   String _getListingDisplayText(ListingPanelModel listing) {
@@ -399,8 +416,11 @@ class _TransactionNotificationScreenState extends State<TransactionNotificationS
                 onSelect: (listing) {
                   setState(() {
                     _selectedListing = listing;
+                    _preSale = null;
+                    _preSaleLoading = true;
                   });
                   Navigator.pop(context);
+                  _loadPreSale(listing.id);
                 },
                 onRefresh: _loadListings,
               );
@@ -444,10 +464,26 @@ class _TransactionNotificationScreenState extends State<TransactionNotificationS
                   ),
                 ),
               
-              // Müşteri uyarısı
-              if (_selectedListing != null && !_hasCustomerOwner) ...[
+              // Mülk sahibi: web preSale.owner ile aynı kutu
+              if (_selectedListing != null && _preSaleLoading) ...[
+                const SizedBox(height: 24),
+                const LinearProgressIndicator(
+                  color: Color(0xFFE53935),
+                  backgroundColor: Color(0xFFFEE2E2),
+                  minHeight: 3,
+                ),
+              ],
+              if (_selectedListing != null &&
+                  !_preSaleLoading &&
+                  !_hasCustomerOwner) ...[
                 const SizedBox(height: 24),
                 _buildCustomerWarningCard(),
+              ],
+              if (_selectedListing != null &&
+                  !_preSaleLoading &&
+                  _hasCustomerOwner) ...[
+                const SizedBox(height: 24),
+                _buildOwnerCard(),
               ],
               
               // Kapanış Tipi Dropdown (sadece ilan seçildiyse)
@@ -559,6 +595,7 @@ class _TransactionNotificationScreenState extends State<TransactionNotificationS
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.all(12),
@@ -572,44 +609,129 @@ class _TransactionNotificationScreenState extends State<TransactionNotificationS
               size: 24,
             ),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              'Lütfen mülkün sahibini müşteriler kısmından tanımlayız.',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
-                height: 1.4,
-              ),
-            ),
-          ),
           const SizedBox(width: 12),
-          ElevatedButton(
-            onPressed: () {
-              // Müşteriler sayfasına git
-              Navigator.pushNamed(context, '/customers');
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE53935),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 0,
-            ),
-            child: const Text(
-              'Müşterilerime Git',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-              ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Lütfen mülkün sahibini müşteriler kısmından tanımlayız.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pushNamed(context, '/customers');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Müşterilerime Git',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildOwnerCard() {
+    final preSale = _preSale;
+    final title = (preSale?.ownerTitle ?? '').trim();
+    final type = (preSale?.ownerTypeDescription ?? '').trim();
+    final picture = ImageUtils.getS3FileUrl(preSale?.ownerPicture);
+    final initials = _ownerInitials(title);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: const Color(0xFFE5E7EB),
+          width: 1.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: const Color(0xFFFEE2E2),
+            backgroundImage: picture.isNotEmpty ? NetworkImage(picture) : null,
+            child: picture.isEmpty
+                ? Text(
+                    initials,
+                    style: const TextStyle(
+                      color: Color(0xFFE53935),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title.isEmpty ? 'Mülk sahibi' : title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
+                if (type.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    type,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _ownerInitials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'MS';
+    String letter(String value) =>
+        value.isEmpty ? '' : value.substring(0, 1).toUpperCase();
+    if (parts.length == 1) return letter(parts.first);
+    return letter(parts.first) + letter(parts.last);
   }
 
   Widget _buildClosingTypeDropdown() {
@@ -925,6 +1047,8 @@ class _TransactionNotificationScreenState extends State<TransactionNotificationS
     // Formu temizle
     setState(() {
       _selectedListing = null;
+      _preSale = null;
+      _preSaleLoading = false;
       _selectedClosingType = null;
       _selectedTenant = null;
       _tenantSearchController.clear();

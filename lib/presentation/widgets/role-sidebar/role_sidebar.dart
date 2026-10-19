@@ -195,6 +195,7 @@ class _RoleSidebarState extends State<RoleSidebar> {
   static bool _cachedIsAdminUser = false;
   static bool _isDataLoaded = false;
   static bool _isLoadingInBackground = false;
+  static Future<void>? _ongoingLoad;
   static final List<Function()> _updateCallbacks = [];
 
   @override
@@ -306,23 +307,45 @@ class _RoleSidebarState extends State<RoleSidebar> {
     }
   }
 
+  static void _notifySidebarUpdates() {
+    final callbacks = List<Function()>.from(_updateCallbacks);
+    for (final callback in callbacks) {
+      callback();
+    }
+  }
+
   // Static metod - dashboard açıldığında çağrılacak
   static Future<void> _loadSidebarDataInBackground(BuildContext context) async {
-    // Eğer zaten yükleniyorsa, tekrar başlatma
-    if (_isLoadingInBackground) {
-      print('⏳ Sidebar verileri zaten yükleniyor...');
+    final inFlight = _ongoingLoad;
+    if (inFlight != null) {
+      await inFlight;
+      _notifySidebarUpdates();
       return;
     }
 
+    final future = _fetchSidebarData(context);
+    _ongoingLoad = future;
+    try {
+      await future;
+    } finally {
+      if (identical(_ongoingLoad, future)) _ongoingLoad = null;
+    }
+  }
+
+  static Future<void> _fetchSidebarData(BuildContext context) async {
+    if (_isLoadingInBackground) return;
+
     _isLoadingInBackground = true;
     final generation = AuthSessionStorage.sessionGeneration;
+    final authCubit = context.read<AuthCubit>();
+    final currentUserEmail = authCubit.currentUser?.email;
+    UserProfileCubit? profileCubit;
+    try {
+      profileCubit = context.read<UserProfileCubit>();
+    } catch (_) {}
     print('🔄 Sidebar verileri arka planda yükleniyor...');
 
     try {
-      final authCubit = context.read<AuthCubit>();
-      final currentUser = authCubit.currentUser;
-      final currentUserEmail = currentUser?.email;
-      
       // Get role codes
       var userRoleCodes = await authCubit.getUserRoleCodes();
       
@@ -339,26 +362,28 @@ class _RoleSidebarState extends State<RoleSidebar> {
 
       // 1. Try to get permissions from UserProfileCubit
       try {
-        final userProfileCubit = context.read<UserProfileCubit>();
-        await userProfileCubit.loadUserProfile();
-        
-        if (userProfileCubit.state is UserProfileLoaded) {
-          final userProfile = (userProfileCubit.state as UserProfileLoaded).userProfile;
-          allPermissions.addAll(userProfile.permissions);
-          final profileType = userProfile.typeDescription.trim();
-          if (profileType.isNotEmpty) typeDescription = profileType;
-          isAdminUser = userProfile.isAdmin;
-          final apiCodes = userProfile.roles
-              .map((role) => role.code)
-              .where((code) => code.isNotEmpty)
-              .toList();
-          if (!userProfile.isAdmin) {
-            apiCodes.remove('role_admin');
+        final userProfileCubit = profileCubit;
+        if (userProfileCubit != null) {
+          await userProfileCubit.loadUserProfile();
+
+          if (userProfileCubit.state is UserProfileLoaded) {
+            final userProfile = (userProfileCubit.state as UserProfileLoaded).userProfile;
+            allPermissions.addAll(userProfile.permissions);
+            final profileType = userProfile.typeDescription.trim();
+            if (profileType.isNotEmpty) typeDescription = profileType;
+            isAdminUser = userProfile.isAdmin;
+            final apiCodes = userProfile.roles
+                .map((role) => role.code)
+                .where((code) => code.isNotEmpty)
+                .toList();
+            if (!userProfile.isAdmin) {
+              apiCodes.remove('role_admin');
+            }
+            if (apiCodes.isNotEmpty) {
+              userRoleCodes = apiCodes;
+            }
+            print('✅ Permissions from UserProfile: ${userProfile.permissions.length}');
           }
-          if (apiCodes.isNotEmpty) {
-            userRoleCodes = apiCodes;
-          }
-          print('✅ Permissions from UserProfile: ${userProfile.permissions.length}');
         }
       } catch (e) {
         print('⚠️ Error loading from UserProfileCubit: $e');
@@ -410,14 +435,14 @@ class _RoleSidebarState extends State<RoleSidebar> {
       }
       
       // 3. Try to get permissions from SharedPreferences or RoleRepository API
-      final additionalPermissions = await _getPermissionsFromRolesStatic(context);
+      final additionalPermissions = await _getPermissionsFromRolesStatic(authCubit);
       allPermissions.addAll(additionalPermissions);
       
       final userPermissions = allPermissions.toList();
       print('✅ Total permissions loaded: ${userPermissions.length}');
 
-      if (!context.mounted || !AuthSessionStorage.isCurrent(generation)) return;
-      if (context.read<AuthCubit>().currentUser?.email != currentUserEmail) {
+      if (!AuthSessionStorage.isCurrent(generation)) return;
+      if (authCubit.currentUser?.email != currentUserEmail) {
         return;
       }
       
@@ -430,10 +455,7 @@ class _RoleSidebarState extends State<RoleSidebar> {
       _isDataLoaded = true;
       print('✅ Sidebar verileri cache\'e kaydedildi');
       
-      // Tüm aktif sidebar instance'larını güncelle
-      for (final callback in _updateCallbacks) {
-        callback();
-      }
+      _notifySidebarUpdates();
     } catch (e) {
       print('❌ Error loading sidebar data: $e');
     } finally {
@@ -442,9 +464,8 @@ class _RoleSidebarState extends State<RoleSidebar> {
   }
 
   // Static versiyonu - preload için
-  static Future<List<String>> _getPermissionsFromRolesStatic(BuildContext context) async {
+  static Future<List<String>> _getPermissionsFromRolesStatic(AuthCubit authCubit) async {
     try {
-      final authCubit = context.read<AuthCubit>();
       final currentUser = authCubit.currentUser;
       
       if (currentUser == null) {
@@ -748,8 +769,22 @@ class _RoleSidebarState extends State<RoleSidebar> {
       MenuItem(
         icon: Icons.school_outlined,
         title: 'Seminer ve Eğitimler',
-        route: '/seminar',
+        route: '/events',
         permission: "any",
+        subRoutes: [
+          MenuItem(
+            icon: Icons.school_outlined,
+            title: 'Seminerler',
+            route: '/events',
+            permission: "any",
+          ),
+          MenuItem(
+            icon: Icons.school_outlined,
+            title: 'Eğitimler',
+            route: '/educations',
+            permission: "any",
+          ),
+        ],
       ),
     ];
   }
@@ -944,7 +979,7 @@ class _RoleSidebarState extends State<RoleSidebar> {
             icon: Icons.school_outlined,
             title: 'Yönetim',
             route: '/seminar',
-            permission: "seminar.list",
+            permission: "admin_only",
           ),
         ],
       ),
@@ -1059,8 +1094,22 @@ class _RoleSidebarState extends State<RoleSidebar> {
       MenuItem(
         icon: Icons.school_outlined,
         title: 'Seminer ve Eğitimler',
-        route: '/seminar',
+        route: '/events',
         permission: "any",
+        subRoutes: [
+          MenuItem(
+            icon: Icons.school_outlined,
+            title: 'Seminerler',
+            route: '/events',
+            permission: "any",
+          ),
+          MenuItem(
+            icon: Icons.school_outlined,
+            title: 'Eğitimler',
+            route: '/educations',
+            permission: "any",
+          ),
+        ],
       ),
       MenuItem(
         icon: Icons.workspace_premium_outlined,
@@ -1102,12 +1151,6 @@ class _RoleSidebarState extends State<RoleSidebar> {
             title: 'Tüm Kişiler',
             route: '/persons',
             permission: "contact.list",
-          ),
-          MenuItem(
-            icon: Icons.person_add_outlined,
-            title: 'Onay Bekleyen Kişiler',
-            route: '/pending-contacts',
-            permission: "admin_only",
           ),
         ],
       ),
@@ -1301,7 +1344,7 @@ class _RoleSidebarState extends State<RoleSidebar> {
             icon: Icons.school_outlined,
             title: 'Yönetim',
             route: '/seminar',
-            permission: "seminar.list",
+            permission: "admin_only",
           ),
         ],
       ),
@@ -1889,7 +1932,7 @@ class _RoleSidebarState extends State<RoleSidebar> {
             icon: Icons.school_outlined,
             title: 'Yönetim',
             route: '/seminar',
-            permission: "seminar.list",
+            permission: "admin_only",
           ),
         ],
       ),
@@ -1956,10 +1999,13 @@ class _RoleSidebarState extends State<RoleSidebar> {
         _navigateToRoleAwareScreen(context, '/users', userRoleCodes);
         break;
       case 'Kişiler':
+      case 'Tüm Kişiler':
         _navigateToRoleAwareScreen(context, '/persons', userRoleCodes);
         break;
       case 'Onay Bekleyen Kişiler':
-        _navigateToRoleAwareScreen(context, '/pending-contacts', userRoleCodes);
+        if (_isAdminUser) {
+          _navigateToRoleAwareScreen(context, '/pending-contacts', userRoleCodes);
+        }
         break;
       case 'Ofisler':
         _navigateToRoleAwareScreen(context, '/offices', userRoleCodes);

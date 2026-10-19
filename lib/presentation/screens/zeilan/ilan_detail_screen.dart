@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/gestures.dart';
-import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:latlong2/latlong.dart';
@@ -46,13 +44,6 @@ class _IlanDetailScreenState extends State<IlanDetailScreen> {
   List<ListingModel> consultantOtherListings = [];
   bool isLoadingOtherListings = false;
 
-  /// Bize Ulaşın formu
-  final TextEditingController _contactPhoneController = TextEditingController();
-  final TextEditingController _contactNameController = TextEditingController();
-  bool _kvkkAccepted = false;
-  bool _campaignsAccepted = false;
-  bool _bizeUlasinSent = false;
-
   @override
   void initState() {
     super.initState();
@@ -64,8 +55,6 @@ class _IlanDetailScreenState extends State<IlanDetailScreen> {
   void dispose() {
     _pageController.dispose();
     _thumbScrollController.dispose();
-    _contactPhoneController.dispose();
-    _contactNameController.dispose();
     super.dispose();
   }
 
@@ -1323,234 +1312,6 @@ class _IlanDetailScreenState extends State<IlanDetailScreen> {
     }
   }
 
-  /// Bize Ulaşın formu - danışman kartının altında
-  Widget _buildBizeUlasinForm() {
-    if (_bizeUlasinSent) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
-        decoration: BoxDecoration(
-          color: Colors.grey[800],
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle, color: Colors.green[400], size: 56),
-            const SizedBox(height: 16),
-            Text(
-              'Talebiniz Alındı',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'En kısa sürede size dönüş yapılacaktır.',
-              style: TextStyle(color: Colors.white70, fontSize: 15),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.grey[800],
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Bize Ulaşın!',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _contactPhoneController,
-            style: const TextStyle(color: Colors.black87, fontSize: 15),
-            decoration: InputDecoration(
-              hintText: '5xx xxx xx xx',
-              hintStyle: TextStyle(color: Colors.grey[600]),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              counterText: '',
-            ),
-            keyboardType: TextInputType.phone,
-            maxLength: 10,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-            ],
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _contactNameController,
-            style: const TextStyle(color: Colors.black87, fontSize: 15),
-            decoration: InputDecoration(
-              hintText: 'Ad Soyad',
-              hintStyle: TextStyle(color: Colors.grey[600]),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
-            textCapitalization: TextCapitalization.words,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZçÇğĞıİöÖşŞüÜ\s]')),
-              LengthLimitingTextInputFormatter(80),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Theme(
-            data: Theme.of(context).copyWith(
-              checkboxTheme: CheckboxThemeData(
-                fillColor: WidgetStateProperty.resolveWith((states) {
-                  if (states.contains(WidgetState.selected)) return Colors.red[600]!;
-                  return Colors.transparent;
-                }),
-                checkColor: WidgetStateProperty.all(Colors.white),
-                side: const BorderSide(color: Colors.white, width: 2),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                splashRadius: 0,
-              ),
-            ),
-            child: CheckboxListTile(
-              value: _kvkkAccepted,
-              onChanged: (v) => setState(() => _kvkkAccepted = v ?? false),
-              title: RichText(
-                text: TextSpan(
-                  style: TextStyle(color: Colors.white, fontSize: 13),
-                  children: [
-                    TextSpan(
-                      text: 'KVKK Aydınlatma Metni',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        decoration: TextDecoration.underline,
-                        decorationColor: Colors.white70,
-                      ),
-                      recognizer: TapGestureRecognizer()
-                        ..onTap = () {
-                          Navigator.pushNamed(context, AppRouter.homeProfileKvkk);
-                        },
-                    ),
-                    const TextSpan(text: "'ni okudum ve onaylıyorum."),
-                  ],
-                ),
-              ),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-          Theme(
-            data: Theme.of(context).copyWith(
-              checkboxTheme: CheckboxThemeData(
-                fillColor: WidgetStateProperty.resolveWith((states) {
-                  if (states.contains(WidgetState.selected)) return Colors.red[600]!;
-                  return Colors.transparent;
-                }),
-                checkColor: WidgetStateProperty.all(Colors.white),
-                side: const BorderSide(color: Colors.white, width: 2),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                splashRadius: 0,
-              ),
-            ),
-            child: CheckboxListTile(
-              value: _campaignsAccepted,
-              onChanged: (v) => setState(() => _campaignsAccepted = v ?? false),
-              title: Text(
-                'Kampanyalardan haberdar olmak istiyorum.',
-                style: TextStyle(color: Colors.white, fontSize: 13),
-              ),
-              controlAffinity: ListTileControlAffinity.leading,
-              contentPadding: EdgeInsets.zero,
-            ),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _onBizeUlasinSubmit,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red[600],
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                elevation: 0,
-              ),
-              child: const Text('Gönder', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _onBizeUlasinSubmit() {
-    FocusScope.of(context).unfocus();
-    final phone = _contactPhoneController.text.replaceAll(RegExp(r'\D'), '');
-    final name = _contactNameController.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lütfen ad soyad giriniz.')),
-      );
-      return;
-    }
-    if (phone.isEmpty || phone.length < 10) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Lütfen geçerli bir telefon numarası giriniz (10 haneli).')),
-      );
-      return;
-    }
-    if (!_kvkkAccepted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("KVKK Aydınlatma Metni'ni onaylamanız gerekiyor.")),
-      );
-      return;
-    }
-    _contactPhoneController.clear();
-    _contactNameController.clear();
-    setState(() {
-      _kvkkAccepted = false;
-      _campaignsAccepted = false;
-      _bizeUlasinSent = true;
-    });
-  }
-
   /// Danışmanın diğer ilanları bölümü UI
   Widget _buildConsultantOtherListings() {
     if (isLoadingOtherListings) {
@@ -2226,9 +1987,6 @@ Detaylar için bizimle iletişime geçin!
                     ),
                   ),
                 ),
-                // Bize Ulaşın formu
-                SizedBox(height: 24),
-                _buildBizeUlasinForm(),
               ],
             ),
           ),

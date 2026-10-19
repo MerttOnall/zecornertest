@@ -76,7 +76,7 @@ class LocalDeviceNotificationService {
       await android?.createNotificationChannel(
         const AndroidNotificationChannel(
           _channelApiId,
-          'Zecorner Test bildirimleri',
+          'Zecorner bildirimleri',
           description: 'Uygulama içi bildirimlerin telefon bildirimi olarak gösterilmesi',
           importance: Importance.high,
         ),

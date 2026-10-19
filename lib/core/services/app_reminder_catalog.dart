@@ -61,7 +61,7 @@ class AppReminderCatalog {
     AppReminderDefinition(
       key: 'transactions_check',
       notificationId: 1999999910,
-      title: 'Zecorner Test',
+      title: 'Zecorner',
       body: 'İşlemlerinizi yaptınız mı?',
       scheduleLabel: '3 günde bir',
       defaultEnabled: true,

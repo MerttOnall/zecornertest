@@ -34,8 +34,6 @@ class _AddPersonScreenState extends State<AddPersonScreen>
   bool _isCustomConsultant = false;
   bool _statusActive = true;
   String? _selectedAddressCountry;
-  /// Uyruk alanı (API nationality); adres ülkesinden bağımsız
-  String? _selectedNationality;
   String? _selectedConsultantLevel;
   String? _selectedCustomRate; // Özel danışman başlangıç oranı (%55-%60)
   static const List<String> _danismanSeviyeleri = [
@@ -1008,9 +1006,6 @@ class _AddPersonScreenState extends State<AddPersonScreen>
                 if (_selectedAddressCountry == null) {
                   _selectedAddressCountry = turkeyList.first.name;
                 }
-                if (_selectedNationality == null) {
-                  _selectedNationality = turkeyList.first.name;
-                }
               }
             }
           }
@@ -1890,19 +1885,7 @@ class _AddPersonScreenState extends State<AddPersonScreen>
               ? addressCountry.code
               : 'TR';
 
-      RefCountryModel? nationalityCountry;
-      if (_selectedNationality != null) {
-        for (final c in _countries) {
-          if (c.name == _selectedNationality) {
-            nationalityCountry = c;
-            break;
-          }
-        }
-      }
-      final nationalityIso =
-          (nationalityCountry != null && nationalityCountry.code.isNotEmpty)
-              ? nationalityCountry.code
-              : countryIso;
+      final nationalityIso = _isForeignNational ? countryIso : 'TR';
 
       // Create ContactApiModel from form data (edit'teki gibi)
       final contact = ContactApiModel(
@@ -3100,66 +3083,6 @@ class _AddPersonScreenState extends State<AddPersonScreen>
                       ),
                     ),
 
-                    const SizedBox(height: 16),
-                    // Uyruk (Opsiyonel)
-                    const Text("Uyruk (Opsiyonel)",
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF2C3E50))),
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.grey[200]!, 
-                          width: 1.5
-                        ),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: _isLoadingRefData
-                            ? const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                                child: Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                    SizedBox(width: 12),
-                                    Text("Yükleniyor...", style: TextStyle(color: Colors.grey)),
-                                  ],
-                                ),
-                              )
-                            : DropdownButton<String>(
-                                dropdownColor: Colors.white,
-                                isExpanded: true,
-                                value: _selectedNationality != null &&
-                                        _countries.any((c) => c.name == _selectedNationality)
-                                    ? _selectedNationality
-                                    : null,
-                                hint: const Padding(
-                                  padding: EdgeInsets.only(left: 8),
-                                  child: Text(
-                                    "Seçiniz",
-                                    style: TextStyle(color: Colors.grey),
-                                  ),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
-                                items: _countries.map((RefCountryModel country) {
-                                  return DropdownMenuItem<String>(
-                                    value: country.name,
-                                    child: Text(country.name, style: const TextStyle(fontSize: 14)),
-                                  );
-                                }).toList(),
-                                onChanged: (value) =>
-                                    setState(() => _selectedNationality = value),
-                              ),
-                      ),
-                    ),
-
                     const SizedBox(height: 24),
                     // Adres Bilgileri
                     const Text(
@@ -3531,7 +3454,9 @@ class _AddPersonScreenState extends State<AddPersonScreen>
                             : DropdownButton<String>(
                                 dropdownColor: Colors.white,
                                 isExpanded: true,
-                                value: _selectedProfession,
+                                value: _professions.any((p) => p.description == _selectedProfession)
+                                    ? _selectedProfession
+                                    : null,
                                 hint: const Padding(
                                   padding: EdgeInsets.only(left: 8),
                                   child: Text(
@@ -3608,7 +3533,9 @@ class _AddPersonScreenState extends State<AddPersonScreen>
                             : DropdownButton<String>(
                                 dropdownColor: Colors.white,
                                 isExpanded: true,
-                                value: _selectedEducation,
+                                value: _educations.any((e) => e.description == _selectedEducation)
+                                    ? _selectedEducation
+                                    : null,
                                 hint: Padding(
                                   padding: const EdgeInsets.only(left: 8),
                                   child: Text(

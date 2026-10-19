@@ -1,10 +1,7 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_datetime_picker_plus/flutter_datetime_picker_plus.dart';
 import 'package:intl/intl.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zecorner/core/auth/advisor_office_scope.dart';
 import 'package:zecorner/core/error/failures.dart';
 import 'package:zecorner/infrastructure/contact/contacts_api_repository.dart';
@@ -17,10 +14,16 @@ import 'package:zecorner/presentation/screens/reports/report_empty_state.dart';
 import 'package:zecorner/presentation/screens/reports/report_theme.dart';
 import 'package:zecorner/presentation/widgets/status/app_status_view.dart';
 
-class SalesReportPanel extends StatefulWidget {
-  final bool officeScoped;
+/// Satış raporunun kim neyi gördüğü.
+/// [all]: admin ve bölge unvanları — tüm ofisler, ofis + kullanıcı filtresi.
+/// [office]: broker — yalnız kendi ofisi, kullanıcı filtresi açık.
+/// [self]: danışman — yalnız kendi işlemleri, ofis/kullanıcı filtresi yok.
+enum SalesReportScope { all, office, self }
 
-  const SalesReportPanel({super.key, this.officeScoped = false});
+class SalesReportPanel extends StatefulWidget {
+  final SalesReportScope scope;
+
+  const SalesReportPanel({super.key, this.scope = SalesReportScope.all});
 
   @override
   State<SalesReportPanel> createState() => _SalesReportPanelState();
@@ -39,7 +42,6 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
   ContactsApiModel? _selectedUser;
 
   bool _isLoading = false;
-  bool _isExporting = false;
   bool _isLoadingUsers = false;
   String? _errorMessage;
   /// Eski / geç gelen satış yanıtlarını yok saymak için
@@ -50,6 +52,8 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
   DateTime? _startDate;
   DateTime? _endDate;
   AdvisorOfficeScope _officeScope = AdvisorOfficeScope.unrestricted;
+  int _selfAdvisorId = 0;
+  String _selfName = '';
 
   static const List<String> _sortOptions = [
     'Hepsi',
@@ -78,8 +82,19 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
   }
 
   Future<void> _init() async {
-    if (widget.officeScoped) {
-      _officeScope = await AdvisorOfficeScope.load();
+    _officeScope = await AdvisorOfficeScope.load();
+    if (widget.scope == SalesReportScope.self) {
+      final prefs = await SharedPreferences.getInstance();
+      _selfAdvisorId = prefs.getInt('advisorId') ?? 0;
+      _selfName = [
+        prefs.getString('userName') ?? '',
+        prefs.getString('userSurname') ?? '',
+      ].join(' ').trim();
+      await _loadSalesData();
+      return;
+    }
+    if (widget.scope == SalesReportScope.office) {
+      await _loadBrokerUsers();
       await _loadSalesData();
       return;
     }
@@ -191,6 +206,54 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
     return people;
   }
 
+  /// Broker kullanıcı listesi yalnız kendi ofisine iner.
+  Future<void> _loadBrokerUsers() async {
+    if (!mounted) return;
+    setState(() => _isLoadingUsers = true);
+
+    final officeId = _officeScope.officeId > 0 ? _officeScope.officeId : null;
+    final officeTitle = _officeScope.officeTitle;
+
+    Future<List<ContactsApiModel>> fetchRaw({int? officeParam}) async {
+      final result = await _contactsRepository.getContacts(
+        page: 1,
+        limit: 9999,
+        office: officeParam,
+        useGetContacts: true,
+      );
+      return result.fold(
+        (_) => <ContactsApiModel>[],
+        (response) => response.contacts,
+      );
+    }
+
+    var raw = await fetchRaw(officeParam: officeId);
+    var people = _normalizeOfficeUsers(
+      raw,
+      officeId: officeId,
+      officeTitle: officeTitle,
+    );
+    if (people.isEmpty &&
+        (officeId != null || officeTitle.trim().isNotEmpty)) {
+      raw = await fetchRaw();
+      people = _normalizeOfficeUsers(
+        raw,
+        officeId: officeId,
+        officeTitle: officeTitle,
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _users = people;
+      _isLoadingUsers = false;
+      if (_selectedUser != null &&
+          !_users.any((u) => u.contactNo == _selectedUser!.contactNo)) {
+        _selectedUser = null;
+      }
+    });
+  }
+
   /// Ofis seçiliyse web ile aynı: `get-contacts/?office=…&pageSize=9999`
   Future<void> _loadUsers({OfficeApiModel? office}) async {
     if (!mounted) return;
@@ -256,22 +319,30 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
         status = 'SOLD';
       }
 
-      final teamOffice = widget.officeScoped &&
-          _officeScope.officeTeam &&
-          _officeScope.officeId > 0;
+      final officeId = widget.scope == SalesReportScope.office
+          ? (_officeScope.officeId > 0 ? _officeScope.officeId : null)
+          : _selectedOffice?.contactNo;
+      final selfContact = _officeScope.userContactNo > 0
+          ? _officeScope.userContactNo
+          : null;
+      final userId = widget.scope == SalesReportScope.self
+          ? selfContact
+          : _selectedUser?.contactNo;
+      final roleCode = switch (widget.scope) {
+        SalesReportScope.office => 'role_office_broker',
+        SalesReportScope.self => 'role_advisor',
+        SalesReportScope.all => 'role_admin',
+      };
       final data = await _salesRepository.getAllSales(
-        roleCode: widget.officeScoped
-            ? (_officeScope.officeTeam ? 'role_office_broker' : 'role_advisor')
-            : 'role_admin',
-        roleEndpointOnly: widget.officeScoped,
+        roleCode: roleCode,
+        roleEndpointOnly: widget.scope != SalesReportScope.all,
         params: SalesQueryParams(
           pageSize: 9999,
           startDate: startDate,
           endDate: endDate,
           status: status,
-          officeContactNo: _selectedOffice?.contactNo ??
-              (teamOffice ? _officeScope.officeId : null),
-          userContactNo: _selectedUser?.contactNo,
+          officeContactNo: officeId,
+          userContactNo: userId,
         ),
       );
 
@@ -301,14 +372,10 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
   List<SaleModel> get _displaySales {
     var sales = List<SaleModel>.from(_salesData?.sales ?? []);
 
-    if (widget.officeScoped) {
-      sales = sales.where((sale) {
-        return _officeScope.allows(
-          officeId: sale.office,
-          personId: sale.advisor,
-          officeTitle: sale.officeTitle,
-        );
-      }).toList();
+    if (widget.scope == SalesReportScope.office) {
+      sales = sales.where(_belongsToBrokerOffice).toList();
+    } else if (widget.scope == SalesReportScope.self) {
+      sales = sales.where(_isOwnSale).toList();
     }
 
     final office = _selectedOffice;
@@ -369,6 +436,40 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
     return sales;
   }
 
+  /// Broker yalnız kendi ofisinin satışını görür.
+  /// Ofis alanı boş kayıt durur; başka ofis düşer. Ofis kimliği yoksa liste boş kalır.
+  bool _belongsToBrokerOffice(SaleModel sale) {
+    final hasOwnOffice = _officeScope.officeId > 0 ||
+        _officeScope.officeTitle.trim().isNotEmpty;
+    if (!hasOwnOffice) return false;
+    final hasId = sale.office > 0;
+    final hasTitle = sale.officeTitle.trim().isNotEmpty;
+    if (_officeScope.officeId > 0 && hasId && sale.office == _officeScope.officeId) {
+      return true;
+    }
+    if (hasTitle && _officeScope.matchesTitle(sale.officeTitle)) return true;
+    return !hasId && !hasTitle;
+  }
+
+  bool get _canIdentifySelf =>
+      _officeScope.userContactNo > 0 ||
+      _selfAdvisorId > 0 ||
+      _selfName.trim().isNotEmpty;
+
+  /// Danışman yalnız kendi işlemini görür. Kimliği yoksa liste boş kalır.
+  bool _isOwnSale(SaleModel sale) {
+    if (!_canIdentifySelf) return false;
+    if (_officeScope.userContactNo > 0 &&
+        sale.advisor == _officeScope.userContactNo) {
+      return true;
+    }
+    if (_selfAdvisorId > 0 && sale.advisor == _selfAdvisorId) return true;
+    final mine = reportFold(_selfName);
+    final theirs = reportFold(sale.advisorTitle);
+    if (mine.isNotEmpty && theirs.isNotEmpty && mine == theirs) return true;
+    return sale.advisor <= 0 && sale.advisorTitle.trim().isEmpty;
+  }
+
   String get _dateText {
     if (_startDate == null || _endDate == null) return 'Tarih aralığı seçin';
     return '${DateFormat('dd/MM/yyyy').format(_startDate!)} — ${DateFormat('dd/MM/yyyy').format(_endDate!)}';
@@ -405,62 +506,13 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
       _endDate = now;
       _searchController.clear();
     });
-    _loadUsers();
+    if (widget.scope == SalesReportScope.office) {
+      _loadBrokerUsers();
+    } else if (widget.scope == SalesReportScope.all) {
+      _loadUsers();
+    }
     _loadSalesData();
   }
-
-  Future<void> _exportExcel() async {
-    final sales = _displaySales;
-    if (sales.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Dışa aktarılacak kayıt bulunamadı')),
-      );
-      return;
-    }
-
-    setState(() => _isExporting = true);
-    try {
-      final buffer = StringBuffer();
-      buffer.writeln(
-        'Danışman;Müşteri;Ofis;Alıcı Komisyon;Satıcı Komisyon;Kapanış Fiyatı;Net Kazanç;Durum;Tarih',
-      );
-      for (final sale in sales) {
-        final buyer = sale.buyerComission?.isNotEmpty == true
-            ? sale.buyerComission!
-            : '';
-        final closing = sale.closingPrice?.isNotEmpty == true
-            ? sale.closingPrice!
-            : sale.price.toString();
-        final status = sale.state == 'SOLD' ? 'Satıldı' : 'Kiralandı';
-        buffer.writeln(
-          '${_csv(sale.advisorTitle)};${_csv(sale.customerTitle)};${_csv(sale.officeTitle)};'
-          '${_csv(buyer)};${_csv(sale.sellerCommission)};${_csv(closing)};'
-          '${_csv(sale.totalComission)};$status;${_csv(sale.date)}',
-        );
-      }
-
-      final dir = await getTemporaryDirectory();
-      final file = File(
-        '${dir.path}/satis_raporu_${DateFormat('yyyyMMdd_HHmm').format(DateTime.now())}.csv',
-      );
-      await file.writeAsString('\uFEFF${buffer.toString()}');
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        subject: 'Satış Raporu',
-        text: 'Satış Raporu Excel çıktısı',
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Dışa aktarma başarısız: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _isExporting = false);
-    }
-  }
-
-  String _csv(String value) =>
-      '"${value.replaceAll('"', '""')}"';
 
   void _showFilterSheet() {
     String draftSort = _selectedSort;
@@ -841,53 +893,55 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
                             onSelect: (v) =>
                                 setSheetState(() => draftStatus = v),
                           ),
-                          if (!widget.officeScoped) ...[
-                          const SizedBox(height: 14),
-                          modernSelect(
-                            keyName: 'office',
-                            label: 'Ofis',
-                            value: draftOfficeValue,
-                            options: officeItems,
-                            onSelect: (v) async {
-                              if (v == 'Tüm ofisler') {
-                                setSheetState(() {
-                                  draftOffice = null;
-                                  draftUser = null;
-                                });
-                                await loadDraftUsers(null);
-                              } else {
-                                final office = _offices.firstWhere(
-                                  (o) => officeOptionLabel(o) == v,
-                                  orElse: () => _offices.first,
-                                );
-                                setSheetState(() {
-                                  draftOffice = office;
-                                  draftUser = null;
-                                });
-                                await loadDraftUsers(office);
-                              }
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          modernSelect(
-                            keyName: 'user',
-                            label: 'Kullanıcı',
-                            value: draftUserValue,
-                            options: userItems,
-                            loading: draftUsersLoading,
-                            onSelect: (v) {
-                              setSheetState(() {
-                                if (v == 'Tüm kullanıcılar') {
-                                  draftUser = null;
+                          if (widget.scope == SalesReportScope.all) ...[
+                            const SizedBox(height: 14),
+                            modernSelect(
+                              keyName: 'office',
+                              label: 'Ofis',
+                              value: draftOfficeValue,
+                              options: officeItems,
+                              onSelect: (v) async {
+                                if (v == 'Tüm ofisler') {
+                                  setSheetState(() {
+                                    draftOffice = null;
+                                    draftUser = null;
+                                  });
+                                  await loadDraftUsers(null);
                                 } else {
-                                  draftUser = draftUsers.firstWhere(
-                                    (u) => userOptionLabel(u) == v,
-                                    orElse: () => draftUsers.first,
+                                  final office = _offices.firstWhere(
+                                    (o) => officeOptionLabel(o) == v,
+                                    orElse: () => _offices.first,
                                   );
+                                  setSheetState(() {
+                                    draftOffice = office;
+                                    draftUser = null;
+                                  });
+                                  await loadDraftUsers(office);
                                 }
-                              });
-                            },
-                          ),
+                              },
+                            ),
+                          ],
+                          if (widget.scope != SalesReportScope.self) ...[
+                            const SizedBox(height: 14),
+                            modernSelect(
+                              keyName: 'user',
+                              label: 'Kullanıcı',
+                              value: draftUserValue,
+                              options: userItems,
+                              loading: draftUsersLoading,
+                              onSelect: (v) {
+                                setSheetState(() {
+                                  if (v == 'Tüm kullanıcılar') {
+                                    draftUser = null;
+                                  } else {
+                                    draftUser = draftUsers.firstWhere(
+                                      (u) => userOptionLabel(u) == v,
+                                      orElse: () => draftUsers.first,
+                                    );
+                                  }
+                                });
+                              },
+                            ),
                           ],
                           const SizedBox(height: 14),
                           Column(
@@ -1171,16 +1225,13 @@ class _SalesReportPanelState extends State<SalesReportPanel> {
                       label: 'Toplam Net Kazanç',
                       value: _totalNetGain,
                     ),
-                    const SizedBox(width: 10),
-                    _SummaryChip(
-                      label: "Zecorner'a Getiri",
-                      value: _zecornerReturn,
-                    ),
-                    const SizedBox(width: 10),
-                    _ExportChip(
-                      loading: _isExporting,
-                      onTap: _isExporting ? null : _exportExcel,
-                    ),
+                    if (widget.scope == SalesReportScope.all) ...[
+                      const SizedBox(width: 10),
+                      _SummaryChip(
+                        label: "Zecorner'a Getiri",
+                        value: _zecornerReturn,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1268,56 +1319,6 @@ class _SummaryChip extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ExportChip extends StatelessWidget {
-  final bool loading;
-  final VoidCallback? onTap;
-
-  const _ExportChip({required this.loading, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: ReportTheme.primary,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          width: 160,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: loading
-              ? const Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  ),
-                )
-              : const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.file_download_outlined, color: Colors.white),
-                    SizedBox(height: 6),
-                    Text(
-                      'Excel Çıktı Al',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-        ),
       ),
     );
   }

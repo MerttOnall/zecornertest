@@ -188,12 +188,33 @@ class ListingsState extends ChangeNotifier {
   }
 
   // API Methods
+  bool _reloadQueued = false;
+  int _queuedPage = 1;
+  bool _queuedRefresh = false;
+  String? _queuedState;
+
+  void _drainQueuedLoad() {
+    if (!_reloadQueued || _isLoading) return;
+    _reloadQueued = false;
+    loadListingsFromAPI(
+      page: _queuedPage,
+      refresh: _queuedRefresh,
+      state: _queuedState,
+    );
+  }
+
   Future<void> loadListingsFromAPI({
     int page = 1,
     bool refresh = false,
     String? state,
   }) async {
-    if (_isLoading) return;
+    if (_isLoading) {
+      _reloadQueued = true;
+      _queuedPage = page;
+      _queuedRefresh = refresh;
+      _queuedState = state;
+      return;
+    }
 
     _isLoading = true;
     _errorMessage = null;
@@ -218,6 +239,7 @@ class ListingsState extends ChangeNotifier {
             _listings = [];
           }
           notifyListeners();
+          _drainQueuedLoad();
           print('❌ API Error: ${failure.message}');
         },
         (listingResponse) {
@@ -231,6 +253,7 @@ class ListingsState extends ChangeNotifier {
           _totalCount = listingResponse.totalCount;
           _isLoading = false;
           notifyListeners();
+          _drainQueuedLoad();
           print('✅ API Success: ${listingResponse.listings.length} listings loaded');
           print('📊 Total Count: ${listingResponse.totalCount}');
           print('📄 Total Pages: ${listingResponse.totalPages}');
@@ -244,6 +267,7 @@ class ListingsState extends ChangeNotifier {
         _listings = [];
       }
       notifyListeners();
+      _drainQueuedLoad();
       print('❌ Unexpected Error: $e');
     }
   }

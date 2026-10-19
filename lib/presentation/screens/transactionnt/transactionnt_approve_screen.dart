@@ -131,26 +131,18 @@ class _TransactionApproveScreenState extends State<TransactionApproveScreen> {
   }
 
   Future<void> _approveListing(ListingPanelModel listing) async {
-    // Onay işlemi - API entegrasyonu yapılacak
-    showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Onay'),
         content: Text('${listing.title} ilanının kapanış onayını vermek istediğinize emin misiniz?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('İptal'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              // API çağrısı yapılacak
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Onay işlemi başarıyla tamamlandı')),
-              );
-              _loadListings();
-            },
+            onPressed: () => Navigator.pop(dialogContext, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFE53935),
             ),
@@ -158,6 +150,29 @@ class _TransactionApproveScreenState extends State<TransactionApproveScreen> {
           ),
         ],
       ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final result = await _listingsRepository.approveClosureListing(listing.id);
+    if (!mounted) return;
+    result.fold(
+      (failure) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(failure.message),
+            backgroundColor: const Color(0xFFE53935),
+          ),
+        );
+      },
+      (message) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: const Color(0xFF22C55E),
+          ),
+        );
+        _loadListings();
+      },
     );
   }
 
@@ -307,12 +322,22 @@ class _TransactionApproveScreenState extends State<TransactionApproveScreen> {
 
   Widget _buildListingCard(ListingPanelModel listing) {
     return GestureDetector(
-      onTap: () {
-        Navigator.pushNamed(
+      onTap: () async {
+        final updated = await Navigator.pushNamed(
           context,
           '/zeonline/transaction-approvals/detail',
           arguments: listing,
         );
+        if (!mounted || updated == null) return;
+        if (updated is String && updated.isNotEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(updated),
+              backgroundColor: const Color(0xFF22C55E),
+            ),
+          );
+        }
+        if (updated == true || updated is String) _loadListings();
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 20),

@@ -18,7 +18,7 @@
 2. Sol panelden **"Runner"** projesini seçin
 3. **"Signing & Capabilities"** sekmesine gidin
 4. **"Automatically manage signing"** işaretli olduğundan emin olun
-5. **Team** dropdown'ından **"2FA3V6ZVMZ"** team'ini seçin
+5. **Team** dropdown'ından **"KS544X4ZMF"** team'ini seçin
 6. Eğer hata görüyorsanız:
    - Xcode menüsünden: **Xcode → Settings → Accounts**
    - Apple ID'nizi seçin
@@ -45,7 +45,7 @@
    - https://developer.apple.com/account/resources/profiles/list
    - **"+"** butonuna tıklayın
    - **"App Store"** seçeneğini seçin
-   - Bundle ID'nizi seçin: `com.zeholding.zecorner.test`
+   - Bundle ID'nizi seçin: `com.zeholding.zecorner`
    - Oluşturduğunuz Distribution sertifikasını seçin
    - Profile'ı indirin ve Xcode'a yükleyin
 
@@ -60,7 +60,7 @@
 ## Genel Kontrol Listesi
 
 - [ ] Apple Developer hesabında güncel PLA kabul edildi
-- [ ] Xcode'da doğru Team seçili (2FA3V6ZVMZ)
+- [ ] Xcode'da doğru Team seçili (KS544X4ZMF)
 - [ ] "Automatically manage signing" aktif
 - [ ] iOS Distribution sertifikası mevcut ve geçerli
 - [ ] Provisioning Profile mevcut ve geçerli
@@ -82,8 +82,6 @@
 
 ## Notlar
 
-- Team ID: **2FA3V6ZVMZ**
-- Bundle ID: **com.zeholding.zecorner.test**
-- Görünen ad: **Zecorner Test**
-- Sürüm: **1.0.0 (1)**
+- Team ID: **KS544X4ZMF**
+- Bundle ID: **com.zeholding.zecorner**
 - Minimum iOS Version: **15.0**

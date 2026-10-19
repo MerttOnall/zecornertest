@@ -1,11 +1,11 @@
 {
-    "name": "Zecorner Test",
-    "short_name": "Zecorner Test",
+    "name": "zecorner",
+    "short_name": "zecorner",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Zecorner Test",
+    "description": "A new Flutter project.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -104,11 +104,12 @@ class SeminarManageCard extends StatelessWidget {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: onOptionsPressed,
-                icon: const Icon(Icons.more_horiz_rounded),
-                color: const Color(0xFFE53935),
-              ),
+              if (onOptionsPressed != null)
+                IconButton(
+                  onPressed: onOptionsPressed,
+                  icon: const Icon(Icons.more_horiz_rounded),
+                  color: const Color(0xFFE53935),
+                ),
             ],
           ),
         ),

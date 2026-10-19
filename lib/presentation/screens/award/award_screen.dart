@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_datetime_picker_plus/flutter_datetime_picker_plus.dart';
@@ -36,7 +38,7 @@ class _AwardScreenState extends State<AwardScreen> {
   String? _errorMessage;
   int _filterRequestId = 0;
 
-  /// Admin tüm sıralamayı görür; diğer kullanıcılar yalnızca kendi satırını.
+  /// Admin tüm sıralamayı görür. Diğerleri ilk 3 kaydı görür; 2. ve 3. bulanık.
   bool _isAdmin = false;
   int? _userOfficeId;
   int? _userContactNo;
@@ -151,17 +153,20 @@ class _AwardScreenState extends State<AwardScreen> {
     return reward.officeNo == officeId;
   }
 
-  /// Admin: tüm liste. Diğerleri: yalnızca kendi sırası (gerçek sıra numarası korunur).
-  List<({int rank, RewardModel reward})> get _displayRows {
+  /// Admin: tüm liste, bulanıksız.
+  /// Diğerleri: gelen sıranın ilk 3 kaydı. 1. açık, 2. ve 3. bulanık.
+  List<({int rank, RewardModel reward, bool blurred})> get _displayRows {
     if (_isAdmin) {
       return [
         for (var i = 0; i < _awardResults.length; i++)
-          (rank: i + 1, reward: _awardResults[i]),
+          (rank: i + 1, reward: _awardResults[i], blurred: false),
       ];
     }
-    final index = _awardResults.indexWhere(_isOwnReward);
-    if (index < 0) return [];
-    return [(rank: index + 1, reward: _awardResults[index])];
+    final count = _awardResults.length < 3 ? _awardResults.length : 3;
+    return [
+      for (var i = 0; i < count; i++)
+        (rank: i + 1, reward: _awardResults[i], blurred: i > 0),
+    ];
   }
 
   String get _emptyStateTitle {
@@ -869,13 +874,20 @@ class _AwardScreenState extends State<AwardScreen> {
                                   final result = row.reward;
                                   return _buildRankCard(
                                     rank: row.rank,
-                                    primary: result.displayPrimary(
-                                      isContactGroup: _isContactGroup,
-                                    ),
-                                    secondary: result.displaySecondary(
-                                      isContactGroup: _isContactGroup,
-                                    ),
-                                    total: _formatPrice(result.total),
+                                    blurred: row.blurred,
+                                    primary: row.blurred
+                                        ? ''
+                                        : result.displayPrimary(
+                                            isContactGroup: _isContactGroup,
+                                          ),
+                                    secondary: row.blurred
+                                        ? null
+                                        : result.displaySecondary(
+                                            isContactGroup: _isContactGroup,
+                                          ),
+                                    total: row.blurred
+                                        ? ''
+                                        : _formatPrice(result.total),
                                   );
                                 },
                               ),
@@ -1169,11 +1181,44 @@ class _AwardScreenState extends State<AwardScreen> {
     );
   }
 
+  Widget _blurredLines({
+    required double wide,
+    required double narrow,
+    bool alignEnd = false,
+  }) {
+    Widget bar(double width, double height, Color color) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(6),
+        ),
+      );
+    }
+
+    return IgnorePointer(
+      child: ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+        child: Column(
+          crossAxisAlignment:
+              alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            bar(wide, 14, const Color(0xFF9CA3AF)),
+            const SizedBox(height: 8),
+            bar(narrow, 11, const Color(0xFFD1D5DB)),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildRankCard({
     required int rank,
     required String primary,
     required String? secondary,
     required String total,
+    bool blurred = false,
   }) {
     final isTopThree = rank <= 3;
     final medal = _medalForRank(rank);
@@ -1248,85 +1293,89 @@ class _AwardScreenState extends State<AwardScreen> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (rank <= 3)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      medal.label,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: medal.accentDark,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ),
-                Text(
-                  primary,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1A1D2E),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (secondary != null && secondary.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Row(
+            child: blurred
+                ? _blurredLines(wide: 148, narrow: 96)
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.place_outlined,
-                        size: 13,
-                        color: Colors.grey.shade500,
-                      ),
-                      const SizedBox(width: 3),
-                      Expanded(
-                        child: Text(
-                          secondary,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            color: Colors.grey.shade500,
-                            fontWeight: FontWeight.w500,
+                      if (rank <= 3)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            medal.label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: medal.accentDark,
+                              letterSpacing: 0.3,
+                            ),
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
+                      Text(
+                        primary,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1A1D2E),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                      if (secondary != null && secondary.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.place_outlined,
+                              size: 13,
+                              color: Colors.grey.shade500,
+                            ),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text(
+                                secondary,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: Colors.grey.shade500,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
-                ],
-              ],
-            ),
           ),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '₺$total',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: rank == 1
-                      ? const Color(0xFFB45309)
-                      : const Color(0xFF1A1D2E),
+          blurred
+              ? _blurredLines(wide: 72, narrow: 28, alignEnd: true)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '₺$total',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: rank == 1
+                            ? const Color(0xFFB45309)
+                            : const Color(0xFF1A1D2E),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '#$rank',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade400,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '#$rank',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade400,
-                ),
-              ),
-            ],
-          ),
         ],
       ),
     );

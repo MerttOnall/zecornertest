@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zecorner/presentation/widgets/admin-panel/admin_panel_appbar.dart';
 import 'package:zecorner/presentation/widgets/role-sidebar/role_sidebar.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -72,10 +73,27 @@ class _PersonApproveScreenState extends State<PersonApproveScreen>
   // Mock data - Replace with API calls
   List<PendingPerson> _pendingPersons = [];
   bool _isLoading = false;
+  bool _allowed = false;
   
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _guardAccess());
+  }
+
+  /// Admin menüsüyle aynı kapı. Broker, danışman ve franchise bu sayfayı açamaz.
+  Future<void> _guardAccess() async {
+    final auth = context.read<AuthCubit>();
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final allowed = auth.isAdmin || prefs.getBool('userIsAdmin') == true;
+    if (!allowed) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+    setState(() => _allowed = true);
     _loadMockData();
   }
 
@@ -883,9 +901,10 @@ class _PersonApproveScreenState extends State<PersonApproveScreen>
                   ),
                 ),
                 
-                // Pending Persons List
                 Expanded(
-                  child: _buildPendingPersonsList(),
+                  child: _allowed
+                      ? _buildPendingPersonsList()
+                      : const SizedBox.shrink(),
                 ),
               ],
             ),

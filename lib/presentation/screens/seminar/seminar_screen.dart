@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zecorner/core/cubit/auth_cubit.dart';
 import 'package:zecorner/infrastructure/seminar/seminar_repository.dart';
 import 'package:zecorner/models/seminar/seminar_model.dart';
@@ -42,6 +43,7 @@ class _SeminarScreenState extends State<SeminarScreen> {
   final TextEditingController _searchController = TextEditingController();
 
   bool _isDrawerOpen = false;
+  bool _canManage = false;
   bool _isLoading = true;
   bool _isLoadingMore = false;
   String? _errorMessage;
@@ -62,7 +64,30 @@ class _SeminarScreenState extends State<SeminarScreen> {
     super.initState();
     _typeFilter = widget.type;
     _scrollController.addListener(_onScroll);
+    _canManage = context.read<AuthCubit>().isAdmin;
+    _loadAccess();
     _loadSeminars(refresh: true);
+  }
+
+  Future<void> _loadAccess() async {
+    final prefs = await SharedPreferences.getInstance();
+    final roles = prefs.getStringList('userRoleCodes') ?? [];
+    final permissions = (prefs.getString('userPermissions') ?? '')
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
+    final isAdmin = prefs.getBool('userIsAdmin') == true ||
+        roles.contains('role_admin') ||
+        (mounted && context.read<AuthCubit>().isAdmin);
+    if (!mounted) return;
+    setState(() {
+      _canManage = RoleSidebar.allows(
+        'admin_only',
+        isAdmin: isAdmin,
+        roleCodes: roles,
+        permissions: permissions,
+      );
+    });
   }
 
   @override
@@ -286,7 +311,7 @@ class _SeminarScreenState extends State<SeminarScreen> {
         title: widget.title,
         onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
       ),
-      floatingActionButton: _isManage
+      floatingActionButton: _isManage && _canManage
           ? FloatingActionButton.extended(
               backgroundColor: const Color(0xFFE53935),
               onPressed: () => Navigator.pushNamed(context, AppRouter.addSeminar),
@@ -421,16 +446,23 @@ class _SeminarScreenState extends State<SeminarScreen> {
                                 ? SeminarManageCard(
                                     seminar: seminar,
                                     onTap: () => _openDetail(seminar),
-                                    onOptionsPressed: () =>
-                                        _showSeminarOptionsMenu(context, seminar),
+                                    onOptionsPressed: _canManage
+                                        ? () => _showSeminarOptionsMenu(
+                                              context,
+                                              seminar,
+                                            )
+                                        : null,
                                   )
                                 : SeminarEventCard(
                                     seminar: seminar,
                                     showTypeBadge: !_hasFixedType,
                                     showInstructors: true,
                                     showQuotaBar: !_isEducationPage,
+                                    showCta: _canManage,
                                     onTap: () => _openDetail(seminar),
-                                    onCtaPressed: () => _openDetail(seminar),
+                                    onCtaPressed: _canManage
+                                        ? () => _openDetail(seminar)
+                                        : null,
                                   ),
                           );
                         },

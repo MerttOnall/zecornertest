@@ -87,6 +87,7 @@ class _TumIlanScreenState extends State<TumIlanScreen> {
     });
     _scrollController.addListener(_onIlanScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       _resolveIdentityThenLoad();
     });
   }

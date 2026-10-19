@@ -1,16 +1,21 @@
 class RefProfessionModel {
+  final String id;
   final String code;
   final String description;
 
   RefProfessionModel({
+    this.id = '',
     required this.code,
     required this.description,
   });
 
   factory RefProfessionModel.fromJson(Map<String, dynamic> json) {
+    final rawId = (json['id'] ?? '').toString();
+    final rawCode = (json['code'] ?? '').toString();
     return RefProfessionModel(
-      code: json['code'] ?? '',
-      description: json['description'] ?? '',
+      id: rawId.isNotEmpty ? rawId : rawCode,
+      code: rawCode.isNotEmpty ? rawCode : rawId,
+      description: (json['description'] ?? json['name'] ?? '').toString(),
     );
   }
 
@@ -49,5 +54,27 @@ class RefProfessionResponseModel {
 
   List<Map<String, dynamic>> toJson() {
     return professions.map((e) => e.toJson()).toList();
+  }
+}
+
+/// Meslek id/kod → açıklama. Liste kartlarında yalnızca id geldiğinde N/A kalmasın.
+class ProfessionCatalog {
+  static final Map<String, String> _labels = {};
+
+  static bool get isReady => _labels.isNotEmpty;
+
+  static void remember(Iterable<RefProfessionModel> items) {
+    for (final item in items) {
+      final label = item.description.trim();
+      if (label.isEmpty) continue;
+      if (item.id.isNotEmpty) _labels[item.id] = label;
+      if (item.code.isNotEmpty) _labels[item.code] = label;
+    }
+  }
+
+  static String? labelFor(String? key) {
+    final text = key?.trim() ?? '';
+    if (text.isEmpty) return null;
+    return _labels[text];
   }
 }

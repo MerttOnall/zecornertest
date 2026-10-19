@@ -17,6 +17,7 @@ import 'package:zecorner/presentation/screens/persons/persons_screen.dart';
 import 'package:zecorner/presentation/screens/portfolio/add_portfolio_screen.dart';
 import 'package:zecorner/presentation/home-screens/home_ilan_screen.dart';
 import 'package:zecorner/presentation/home-screens/home_profile_screen.dart';
+import 'package:zecorner/presentation/widgets/navbar/navbar_navigation.dart';
 
 class FrancahiseNavbar extends StatelessWidget {
   final int currentIndex;
@@ -48,10 +49,13 @@ class FrancahiseNavbar extends StatelessWidget {
                 Expanded(
                   child: GestureDetector(
                     onTap: () async {
+                      if (i == currentIndex) return;
+                      final ticket = NavbarNavigation.claim();
+                      final navigator = Navigator.of(context);
                       if (i == 0) {
                         final route = await context.read<AuthCubit>().getDashboardRoute();
-                        if (!context.mounted) return;
-                        Navigator.of(context).pushReplacementNamed(route);
+                        if (ticket != NavbarNavigation.ticket) return;
+                        NavbarNavigation.replaceNamedLater(ticket, navigator, route);
                         return;
                       }
                       String? targetRoute;
@@ -90,17 +94,8 @@ class FrancahiseNavbar extends StatelessWidget {
                           page = const HomeProfileScreen();
                           break;
                       }
-                      if (page != null) {
-                        Navigator.of(context).pushReplacement(
-                          PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) => page!,
-                            transitionDuration: Duration.zero,
-                            reverseTransitionDuration: Duration.zero,
-                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                              return child;
-                            },
-                          ),
-                        );
+                      if (page != null && ticket == NavbarNavigation.ticket) {
+                        NavbarNavigation.replaceLater(ticket, navigator, page);
                       }
                     },
                     child: Center(

@@ -12,6 +12,7 @@ class SeminarEventCard extends StatelessWidget {
   final bool showInstructors;
   final bool logoStyle;
   final bool showQuotaBar;
+  final bool showCta;
 
   const SeminarEventCard({
     super.key,
@@ -24,6 +25,7 @@ class SeminarEventCard extends StatelessWidget {
     this.showInstructors = true,
     this.logoStyle = false,
     this.showQuotaBar = true,
+    this.showCta = true,
   });
 
   static final DateFormat _dateTime = DateFormat('dd.MM.yyyy HH:mm');
@@ -282,6 +284,7 @@ class SeminarEventCard extends StatelessWidget {
                           ),
                         ),
                     ],
+                    if (showCta) ...[
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -310,6 +313,7 @@ class SeminarEventCard extends StatelessWidget {
                         child: Text(seminar.ctaLabel),
                       ),
                     ),
+                    ],
                   ],
                 ),
               ),

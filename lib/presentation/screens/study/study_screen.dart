@@ -96,7 +96,15 @@ class _StudyScreenState extends State<StudyScreen> {
             .map((raw) => Map<String, dynamic>.from(raw))
             .map(_TrainingVideoItem.fromApi)
             .where((item) => item.videoUrl.isNotEmpty)
-            .toList();
+            .toList()
+          ..sort((a, b) {
+            final aTime = a.addedAt;
+            final bTime = b.addedAt;
+            if (aTime == null && bTime == null) return 0;
+            if (aTime == null) return 1;
+            if (bTime == null) return -1;
+            return bTime.compareTo(aTime);
+          });
 
         if (!mounted) return;
         setState(() {
@@ -1068,19 +1076,24 @@ class _TrainingVideoItem {
     required this.title,
     required this.subtitle,
     required this.videoUrl,
+    this.addedAt,
   });
 
   factory _TrainingVideoItem.fromApi(Map<String, dynamic> json) {
     final key = (json['key'] ?? '').toString();
     final name = (json['name'] ?? '').toString();
     final titleSource = name.isNotEmpty ? name : key;
+    final rawDate = json['lastModified'] ?? json['last_modified'] ?? json['createdAt'];
 
     return _TrainingVideoItem(
       title: _prettifyTitle(titleSource),
       subtitle: 'İzlemek için dokunun',
       videoUrl: _buildVideoUrl(key),
+      addedAt: DateTime.tryParse(rawDate?.toString() ?? ''),
     );
   }
+
+  final DateTime? addedAt;
 
   static String _buildVideoUrl(String key) {
     final trimmed = key.trim();

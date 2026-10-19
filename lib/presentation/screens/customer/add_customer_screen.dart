@@ -891,26 +891,8 @@ class _AddCustomerScreenState extends State<AddCustomerScreen> {
     });
 
     try {
-      // Müşteri tipi kodunu belirle
-      int customerTypeCode;
-      switch (_selectedCustomerType) {
-        case 'Alıcı':
-          customerTypeCode = 201;
-          break;
-        case 'Satıcı':
-          customerTypeCode = 202;
-          break;
-        case 'Potansiyel':
-        case 'Potansiyel Alıcı':
-        case 'Potansiyel Satıcı':
-          customerTypeCode = 203;
-          break;
-        case 'Alıcı & Satıcı':
-          customerTypeCode = 204;
-          break;
-        default:
-          customerTypeCode = 201;
-      }
+      final customerTypeCode =
+          CustomerApiModel.typeCodeForLabel(_selectedCustomerType) ?? 201;
       
       // Ülke kodu sadece ekranda. Kayıt, kişi formundaki gibi 10 haneli numara.
       final phoneFormatted = PhoneNumberFormatter.localDigits(_phoneController.text);

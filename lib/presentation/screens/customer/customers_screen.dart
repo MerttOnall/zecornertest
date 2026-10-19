@@ -56,20 +56,8 @@ class _CustomersScreenState extends State<CustomersScreen>
   ];
 
   int? _getCustomerTypeCode() {
-    switch (_selectedCustomerType) {
-      case 'Alıcı':
-        return 201;
-      case 'Satıcı':
-        return 202;
-      case 'Potansiyel':
-      case 'Potansiyel Alıcı':
-      case 'Potansiyel Satıcı':
-        return 203;
-      case 'Alıcı & Satıcı':
-        return 204;
-      default:
-        return null;
-    }
+    if (_selectedCustomerType == 'Hepsi') return null;
+    return CustomerApiModel.typeCodeForLabel(_selectedCustomerType);
   }
 
   String _fold(String value) {

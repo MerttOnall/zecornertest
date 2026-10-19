@@ -71,8 +71,8 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
   AdvisorDailyModel? _dailyData;
   
   // Chart Filter State
-  int? _selectedYear;
-  int? _selectedMonth;
+  int? _selectedYear = DateTime.now().year;
+  int? _selectedMonth = DateTime.now().month;
 
   // Operation Gauge Carousel
   late final PageController _operationPageController;
@@ -106,6 +106,7 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
     _startOperationAutoScroll();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       RoleSidebar.preloadSidebarData(context);
     });
     _loadDashboardData();
@@ -163,7 +164,10 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
       final totalsResult = await _dashboardRepo.getDashboardTotals();
       final potentialResult = await _potentialIncomeRepo.getPotentialIncome();
       // Danışman dashboard için direkt advisor daily revenue endpoint'ini kullan
-      final dailyResult = await _dashboardRepo.getAdvisorDailyRevenue();
+      final dailyResult = await _dashboardRepo.getAdvisorDailyRevenue(
+        year: _selectedYear,
+        month: _selectedMonth,
+      );
 
       // Totals verilerini işle
       totalsResult.fold(
@@ -1510,14 +1514,13 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
   /// Para formatı için yardımcı metot
   String _formatPrice(String priceString) {
     try {
-      final price = double.tryParse(priceString) ?? 0.0;
-      // Webdeki gibi format: ₺165.000,00
-      final integerPart = price.toInt().toString();
-      final formattedInteger = integerPart.replaceAllMapped(
-        RegExp(r'(\d)(?=(\d{3})+(?!\d))'), 
-        (match) => '${match[1]}.'
+      final price = double.tryParse(priceString.replaceAll(',', '.')) ?? 0.0;
+      final parts = price.toStringAsFixed(2).split('.');
+      final formattedInteger = parts[0].replaceAllMapped(
+        RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+        (match) => '${match[1]}.',
       );
-      return "₺$formattedInteger,00";
+      return '₺$formattedInteger,${parts[1]}';
     } catch (e) {
       return "₺0,00";
     }
@@ -1595,46 +1598,30 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
     return months[month];
   }
 
-  /// API'den gelen verilerdeki yılları döndür
-  List<int> _getAvailableYears() {
-    if (_dailyData == null || _dailyData!.days.isEmpty) {
-      return [];
-    }
-    
-    final years = <int>{};
-    for (var day in _dailyData!.days) {
-      try {
-        final dayDate = DateTime.parse(day.day);
-        years.add(dayDate.year);
-      } catch (e) {
-        print('⚠️ Tarih parse hatası: ${day.day} - $e');
-      }
-    }
-    
-    final sortedYears = years.toList()..sort((a, b) => b.compareTo(a)); // Yeni yıldan eskiye
-    return sortedYears;
+  /// Web ile aynı: 2024’ten bu yıla, en yeni yıl üstte.
+  List<int> _getAvailableYears() => DashboardRepository.chartFilterYears();
+
+  /// Web ile aynı: seçilen yıl için 12 ay.
+  List<int> _getAvailableMonthsForYear(int year) {
+    if (year <= 0) return const [];
+    return DashboardRepository.chartFilterMonths();
   }
 
-  /// Seçili yıldaki mevcut ayları döndür
-  List<int> _getAvailableMonthsForYear(int year) {
-    if (_dailyData == null || _dailyData!.days.isEmpty) {
-      return [];
-    }
-    
-    final months = <int>{};
-    for (var day in _dailyData!.days) {
+  Future<void> _reloadChart() async {
+    final year = _selectedYear ?? DateTime.now().year;
+    final month = _selectedMonth ?? DateTime.now().month;
+    final result = await _dashboardRepo.getAdvisorDailyRevenue(
+      year: year,
+      month: month,
+    );
+    if (!mounted) return;
+    result.fold((_) {}, (data) {
       try {
-        final dayDate = DateTime.parse(day.day);
-        if (dayDate.year == year) {
-          months.add(dayDate.month);
-        }
+        setState(() => _dailyData = AdvisorDailyModel.fromJson(data));
       } catch (e) {
-        print('⚠️ Tarih parse hatası: ${day.day} - $e');
+        print('⚠️ Grafik yenilenemedi: $e');
       }
-    }
-    
-    final sortedMonths = months.toList()..sort((a, b) => b.compareTo(a)); // Yeni aydan eskiye
-    return sortedMonths;
+    });
   }
 
   Widget _buildIncomeChart() {
@@ -1705,12 +1692,9 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
                         : (value) {
                             setState(() {
                               _selectedYear = value;
-                              final months = value != null
-                                  ? _getAvailableMonthsForYear(value)
-                                  : <int>[];
-                              _selectedMonth =
-                                  months.isNotEmpty ? months.first : null;
+                              _selectedMonth ??= DateTime.now().month;
                             });
+                            _reloadChart();
                           },
                   ),
                 ),
@@ -1733,6 +1717,7 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
                             setState(() {
                               _selectedMonth = value;
                             });
+                            _reloadChart();
                           },
                   ),
                 ),
@@ -1745,16 +1730,10 @@ class _DanismanDashboardScreenState extends State<DanismanDashboardScreen>
               child: ElevatedButton(
               onPressed: () {
                 setState(() {
-                  final years = _getAvailableYears();
-                  if (years.isNotEmpty) {
-                    _selectedYear = years.first;
-                    final months = _getAvailableMonthsForYear(_selectedYear!);
-                    _selectedMonth = months.isNotEmpty ? months.first : null;
-                  } else {
-                    _selectedYear = null;
-                    _selectedMonth = null;
-                  }
+                  _selectedYear = DateTime.now().year;
+                  _selectedMonth = DateTime.now().month;
                 });
+                _reloadChart();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryRed,

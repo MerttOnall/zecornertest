@@ -112,6 +112,9 @@ class UserProfileModel {
         json['detail'] is Map
             ? Map<String, dynamic>.from(json['detail'] as Map)
             : <String, dynamic>{},
+      ).withPicture(
+        _readPictureId(json['picture']) ??
+            _pictureFromAttachments(json['attachments']),
       ),
       attachments: json['attachments'],
       address: UserAddressModel.fromJson(
@@ -221,6 +224,7 @@ class UserDetailModel {
   final dynamic rating;
   final String? logo;
   final dynamic detail;
+  final List<dynamic>? rawAttachments;
 
   UserDetailModel({
     required this.id,
@@ -238,6 +242,7 @@ class UserDetailModel {
     this.rating,
     this.logo,
     this.detail,
+    this.rawAttachments,
   });
 
   factory UserDetailModel.fromJson(Map<String, dynamic> json) {
@@ -249,7 +254,12 @@ class UserDetailModel {
 
     final profession = asMap(json['profession']);
     final education = asMap(json['education']);
-    final social = asMap(json['social_media']);
+    final social = asMap(json['social_media']) ?? asMap(json['socialMedia']);
+    String? text(dynamic value) {
+      if (value == null) return null;
+      final t = value.toString().trim();
+      return t.isEmpty ? null : t;
+    }
 
     return UserDetailModel(
       id: json['id']?.toString() ?? '',
@@ -262,18 +272,30 @@ class UserDetailModel {
           : null,
       socialMedia:
           social != null ? UserSocialMediaModel.fromJson(social) : null,
-      whereYouHeardUs: json['where_you_heard_us'],
-      coverLetter: json['cover_letter'],
+      whereYouHeardUs: text(json['where_you_heard_us']) ?? text(json['whereYouHeardUs']),
+      coverLetter: text(json['cover_letter']) ??
+          text(json['coverLetter']) ??
+          text(json['writing']) ??
+          text(json['about_me']) ??
+          text(json['aboutMe']),
       sectoralExperience: json['sectoral_experience'] is int
           ? json['sectoral_experience'] as int
           : int.tryParse('${json['sectoral_experience'] ?? ''}'),
-      picture: json['picture'],
+      picture: _readPictureId(json['picture']) ??
+          _readPictureId(json['profile_picture']) ??
+          _readPictureId(json['profilePicture']) ??
+          _pictureFromAttachments(json['attachments']) ??
+          _readPictureId(asMap(json['detail'])?['picture']),
       reference: json['reference'],
       areasOfExpertise: json['areas_of_expertise'],
-      marketingCommunicationPermission: json['marketing_communication_permission'] ?? false,
+      marketingCommunicationPermission:
+          json['marketing_communication_permission'] ??
+              json['marketingCommunicationPermission'] ??
+              false,
       rating: json['rating'],
       logo: json['logo'],
       detail: json['detail'],
+      rawAttachments: json['attachments'] is List ? json['attachments'] as List : null,
     );
   }
 
@@ -298,7 +320,7 @@ class UserDetailModel {
   }
 
   Map<String, dynamic> toUpdateJson() {
-    return {
+    final data = <String, dynamic>{
       'profession': profession?.toJson(),
       'education': education?.toJson(),
       'social_media': socialMedia?.toJson(),
@@ -308,6 +330,35 @@ class UserDetailModel {
       'areas_of_expertise': areasOfExpertise,
       'marketing_communication_permission': marketingCommunicationPermission,
     };
+    if (detail is Map && (detail as Map).isNotEmpty) {
+      data['detail'] = detail;
+    }
+    return data;
+  }
+
+  UserDetailModel withPicture(String? value) {
+    final next = value?.trim() ?? '';
+    if (next.isEmpty || (picture != null && picture!.trim().isNotEmpty)) {
+      return this;
+    }
+    return UserDetailModel(
+      id: id,
+      birthday: birthday,
+      profession: profession,
+      education: education,
+      socialMedia: socialMedia,
+      whereYouHeardUs: whereYouHeardUs,
+      coverLetter: coverLetter,
+      sectoralExperience: sectoralExperience,
+      picture: next,
+      reference: reference,
+      areasOfExpertise: areasOfExpertise,
+      marketingCommunicationPermission: marketingCommunicationPermission,
+      rating: rating,
+      logo: logo,
+      detail: detail,
+      rawAttachments: rawAttachments,
+    );
   }
 }
 
@@ -439,11 +490,13 @@ class UserAddressModel {
       city: asInt(json['city']),
       countryCode: json['country_code'] ?? 'TR',
       countryName: json['country_name'] ?? 'Türkiye Cumhuriyeti',
-      source: json['source'],
-      lat: json['lat']?.toDouble(),
-      lon: json['lon']?.toDouble(),
-      uavtAddress: json['uavt_address'] != null 
-          ? UserUavtAddressModel.fromJson(json['uavt_address'])
+      source: json['source']?.toString(),
+      lat: _asDouble(json['lat']),
+      lon: _asDouble(json['lon']),
+      uavtAddress: (json['uavt_address'] ?? json['uavtAddress']) is Map
+          ? UserUavtAddressModel.fromJson(
+              Map<String, dynamic>.from((json['uavt_address'] ?? json['uavtAddress']) as Map),
+            )
           : null,
     );
   }
@@ -490,13 +543,29 @@ class UserUavtAddressModel {
   });
 
   factory UserUavtAddressModel.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic value) {
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value.trim()) ?? 0;
+      return 0;
+    }
+
+    String text(dynamic value) => value?.toString().trim() ?? '';
+
     return UserUavtAddressModel(
-      provinceCode: json['province_code'] ?? 0,
-      provinceName: json['province_name'] ?? '',
-      districtCode: json['district_code'] ?? 0,
-      districtName: json['district_name'] ?? '',
-      quarterCode: json['quarter_code'] ?? 0,
-      quarterName: json['quarter_name'] ?? '',
+      provinceCode: asInt(json['province_code'] ?? json['provinceCode']),
+      provinceName: text(json['province_name'] ?? json['provinceName']),
+      districtCode: asInt(json['district_code'] ?? json['districtCode']),
+      districtName: text(json['district_name'] ?? json['districtName']),
+      quarterCode: asInt(
+        json['quarter_code'] ?? json['quarterCode'] ?? json['village_code'] ?? json['villageCode'],
+      ),
+      quarterName: text(
+        json['quarter_name'] ??
+            json['quarterName'] ??
+            json['village_name'] ??
+            json['villageName'],
+      ),
     );
   }
 
@@ -538,4 +607,40 @@ class UserRoleModel {
       'is_admin': isAdmin,
     };
   }
+}
+
+double? _asDouble(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value.trim());
+  return null;
+}
+
+String? _readPictureId(dynamic value) {
+  if (value == null) return null;
+  if (value is String) {
+    final text = value.trim();
+    return text.isEmpty ? null : text;
+  }
+  if (value is Map) {
+    for (final key in ['picture', 's3Id', 's3_id', 'attachment', 'name', 'url', 'file']) {
+      final nested = _readPictureId(value[key]);
+      if (nested != null) return nested;
+    }
+  }
+  return null;
+}
+
+String? _pictureFromAttachments(dynamic raw) {
+  if (raw is! List) return null;
+  for (final item in raw) {
+    if (item is! Map) continue;
+    final type = (item['type'] ?? item['id'] ?? '').toString().toUpperCase();
+    if (!type.contains('PICTURE') && !type.contains('PHOTO') && !type.contains('AVATAR')) {
+      continue;
+    }
+    final id = _readPictureId(item['attachment'] ?? item['s3Id'] ?? item['fileId'] ?? item['name']);
+    if (id != null) return id;
+  }
+  return null;
 }

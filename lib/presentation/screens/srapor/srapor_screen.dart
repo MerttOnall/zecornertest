@@ -58,6 +58,7 @@ class _SraporScreenState extends State<SraporScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   String _roleCode = 'role_admin';
+  bool _canSeeZecornerReturn = false;
 
   static const List<String> _sortOptions = [
     'Hepsi',
@@ -98,6 +99,8 @@ class _SraporScreenState extends State<SraporScreen> {
     try {
       final authCubit = context.read<AuthCubit>();
       final roleCodes = await authCubit.getUserRoleCodes();
+      _canSeeZecornerReturn =
+          authCubit.isAdmin || roleCodes.contains('role_admin');
       if (roleCodes.contains('role_advisor')) {
         _roleCode = 'role_advisor';
       } else if (roleCodes.contains('role_office_broker')) {
@@ -660,11 +663,13 @@ class _SraporScreenState extends State<SraporScreen> {
                         label: 'Toplam Net Kazanç',
                         value: _totalNetGain,
                       ),
-                      const SizedBox(width: 10),
-                      _SummaryChip(
-                        label: "Zecorner'a Getiri",
-                        value: _zecornerReturn,
-                      ),
+                      if (_canSeeZecornerReturn) ...[
+                        const SizedBox(width: 10),
+                        _SummaryChip(
+                          label: "Zecorner'a Getiri",
+                          value: _zecornerReturn,
+                        ),
+                      ],
                     ],
                   ),
                 ),

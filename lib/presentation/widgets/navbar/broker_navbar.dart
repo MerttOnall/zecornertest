@@ -11,6 +11,7 @@ import 'package:zecorner/presentation/screens/srapor/srapor_screen.dart';
 import 'package:zecorner/presentation/screens/portfolio/add_portfolio_screen.dart';
 import 'package:zecorner/presentation/home-screens/home_ilan_screen.dart';
 import 'package:zecorner/presentation/home-screens/home_profile_screen.dart';
+import 'package:zecorner/presentation/widgets/navbar/navbar_navigation.dart';
 
 class BrokerNavbar extends StatelessWidget {
   final int currentIndex;
@@ -42,15 +43,12 @@ class BrokerNavbar extends StatelessWidget {
                 Expanded(
                   child: GestureDetector(
                     onTap: () {
+                      if (i == currentIndex) return;
                       // "+" — Broker da portföy/ilan ekleyebilir (danışman ile aynı).
                       // Kayıt sonrası AddPortfolioScreen pop ettiğinde bulunduğu
                       // ekrana dönsün diye push kullanılır (replace değil).
                       if (i == 2) {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const AddPortfolioScreen(),
-                          ),
-                        );
+                        NavbarNavigation.push(context, const AddPortfolioScreen());
                         return;
                       }
 
@@ -85,16 +83,7 @@ class BrokerNavbar extends StatelessWidget {
                           break;
                       }
                       if (page != null) {
-                        Navigator.of(context).pushReplacement(
-                          PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) => page!,
-                            transitionDuration: Duration.zero,
-                            reverseTransitionDuration: Duration.zero,
-                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                              return child;
-                            },
-                          ),
-                        );
+                        NavbarNavigation.open(context, page);
                       }
                     },
                     child: Center(

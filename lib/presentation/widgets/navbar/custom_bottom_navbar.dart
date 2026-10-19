@@ -20,6 +20,7 @@ import 'package:zecorner/presentation/widgets/admin-panel/admin_panel_sidebar.da
 import 'package:zecorner/presentation/widgets/brocker-panel/brocker_sidebar.dart';
 import 'package:zecorner/presentation/widgets/danisman-panel/danisman_sidebar.dart';
 import 'package:zecorner/presentation/widgets/franchise-panel/franchise_sidebar.dart';
+import 'package:zecorner/presentation/widgets/navbar/navbar_navigation.dart';
 
 /// Sayfa bazlı navbar teması. [homeWelcome] sadece ana sayfa (kırmızı arka plan) için.
 enum NavbarTheme { standard, homeWelcome }
@@ -183,16 +184,9 @@ class CustomBottomNavbar extends StatelessWidget {
                         Expanded(
                           child: GestureDetector(
                             onTap: () {
+                              if (i == currentIndex) return;
                               if ((i == 2 || i == 4) && authState is! AuthAuthenticated) {
-                                Navigator.pushReplacement(
-                                  context,
-                                  PageRouteBuilder(
-                                    pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(),
-                                    transitionDuration: Duration.zero,
-                                    reverseTransitionDuration: Duration.zero,
-                                    transitionsBuilder: (context, animation, secondaryAnimation, child) => child,
-                                  ),
-                                );
+                                NavbarNavigation.open(context, const LoginScreen());
                                 return;
                               }
                               if (authState is AuthAuthenticated) {
@@ -224,14 +218,7 @@ class CustomBottomNavbar extends StatelessWidget {
                                 case '/home-profile': page = const HomeProfileScreen(); break;
                               }
                               if (page != null) {
-                                Navigator.of(context).push(
-                                  PageRouteBuilder(
-                                    pageBuilder: (context, animation, secondaryAnimation) => page!,
-                                    transitionDuration: Duration.zero,
-                                    reverseTransitionDuration: Duration.zero,
-                                    transitionsBuilder: (context, animation, secondaryAnimation, child) => child,
-                                  ),
-                                );
+                                NavbarNavigation.push(context, page);
                               }
                             },
                             child: Center(

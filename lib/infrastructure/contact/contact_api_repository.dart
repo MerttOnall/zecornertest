@@ -158,14 +158,182 @@ class ContactApiRepository with UpdateMixin {
       );
 
       if (response.statusCode == 200) {
-        final contact = ContactApiModel.fromJson(response.data['data'] ?? response.data);
-        return Right(contact);
+        final primary = _asContactMap(response.data);
+        final found = ContactApiModel.collectAttachmentMaps(response.data);
+        if (found.isNotEmpty) primary['attachments'] = found;
+        final webMap = await _fetchWebContactMap(contactId, headers);
+        final merged =
+            webMap == null ? primary : _mergeContactMaps(primary, webMap);
+        if (webMap != null) {
+          final webFound = ContactApiModel.collectAttachmentMaps(webMap);
+          if (webFound.isNotEmpty) {
+            final current = ContactApiModel.collectAttachmentMaps(merged);
+            merged['attachments'] = [...current, ...webFound];
+          }
+        }
+        try {
+          return Right(ContactApiModel.fromJson(merged));
+        } catch (_) {
+          return Right(ContactApiModel.fromJson({
+            'contact_no': contactId,
+            'name': merged['name'],
+            'surname': merged['surname'],
+            'e_mail': merged['e_mail'],
+            'tel': merged['tel'],
+            'detail': merged['detail'] is Map
+                ? merged['detail']
+                : <String, dynamic>{},
+            'attachments': merged['attachments'],
+          }));
+        }
       } else {
         return Left(ServerFailure(message: response.data['message'] ?? 'Contact bulunamadı'));
       }
     } catch (e) {
       return Left(ServerFailure(message: 'Bağlantı hatası: $e'));
     }
+  }
+
+  bool _looksLikeContact(Map<String, dynamic> map) {
+    return map['contact_no'] != null ||
+        map['contactNo'] != null ||
+        map['detail'] != null ||
+        map['attachments'] != null ||
+        (map['name'] != null &&
+            (map['surname'] != null ||
+                map['e_mail'] != null ||
+                map['eMail'] != null));
+  }
+
+  Map<String, dynamic>? _pickContact(dynamic node, [int depth = 0]) {
+    if (node is! Map || depth > 4) return null;
+    final map = Map<String, dynamic>.from(node);
+    if (_looksLikeContact(map)) return map;
+    for (final key in ['data', 'contact', 'result', 'payload']) {
+      final found = _pickContact(map[key], depth + 1);
+      if (found != null) return found;
+    }
+    return null;
+  }
+
+  Map<String, dynamic> _asContactMap(dynamic raw) {
+    if (raw is String) {
+      final text = raw.trim();
+      if (text.startsWith('{') || text.startsWith('[')) {
+        try {
+          return _asContactMap(jsonDecode(text));
+        } catch (_) {}
+      }
+      return {};
+    }
+    if (raw is List) {
+      for (final item in raw) {
+        final picked = _asContactMap(item);
+        if (picked.isNotEmpty) return picked;
+      }
+      return {};
+    }
+    if (raw is! Map) return {};
+    final body = Map<String, dynamic>.from(raw);
+    final contact = _pickContact(body) ?? body;
+    if (contact['attachments'] == null && body['attachments'] != null) {
+      contact['attachments'] = body['attachments'];
+    }
+    if (contact['files'] == null && body['files'] != null) {
+      contact['files'] = body['files'];
+    }
+    final data = body['data'];
+    if (data is Map) {
+      if (contact['attachments'] == null && data['attachments'] != null) {
+        contact['attachments'] = data['attachments'];
+      }
+      if (contact['detail'] == null && data['detail'] != null) {
+        contact['detail'] = data['detail'];
+      }
+    }
+    return contact;
+  }
+
+  Map<String, dynamic> _mergeContactMaps(
+    Map<String, dynamic> primary,
+    Map<String, dynamic> extra,
+  ) {
+    final merged = Map<String, dynamic>.from(primary);
+    for (final key in ['attachments', 'files']) {
+      final combined = _concatAttachmentLists(primary[key], extra[key]);
+      if (combined != null) merged[key] = combined;
+    }
+    if (extra['detail'] is Map) {
+      final current = merged['detail'] is Map
+          ? Map<String, dynamic>.from(merged['detail'] as Map)
+          : <String, dynamic>{};
+      final incoming = Map<String, dynamic>.from(extra['detail'] as Map);
+      incoming.forEach((key, value) {
+        if (key == 'attachments' || key == 'files') {
+          final combined = _concatAttachmentLists(current[key], value);
+          if (combined != null) current[key] = combined;
+        } else if (current[key] == null) {
+          current[key] = value;
+        }
+      });
+      merged['detail'] = current;
+    }
+    if ((merged['name'] == null || merged['name'].toString().isEmpty) &&
+        extra['name'] != null) {
+      extra.forEach((key, value) {
+        merged.putIfAbsent(key, () => value);
+      });
+    }
+    return merged;
+  }
+
+  dynamic _decodeAttachmentSource(dynamic value) {
+    if (value is! String) return value;
+    final text = value.trim();
+    if (!text.startsWith('[') && !text.startsWith('{')) return value;
+    try {
+      return jsonDecode(text);
+    } catch (_) {
+      return value;
+    }
+  }
+
+  List<dynamic>? _concatAttachmentLists(dynamic primary, dynamic extra) {
+    final out = <dynamic>[];
+    void take(dynamic value) {
+      final decoded = _decodeAttachmentSource(value);
+      if (decoded is List) out.addAll(decoded);
+      if (decoded is Map) out.add(decoded);
+    }
+
+    take(primary);
+    take(extra);
+    return out.isEmpty ? null : out;
+  }
+
+  /// Web düzenleme ekranı `GET /api/get-contact?no=` ile belgeleri de alır.
+  Future<Map<String, dynamic>?> _fetchWebContactMap(
+    int contactId,
+    Map<String, String> headers,
+  ) async {
+    final origin = EnvApi.webNextApiOrigin;
+    if (origin == null || origin.isEmpty) return null;
+    final url = EnvApi.amplifyStyleTrailingSlash('$origin/api/get-contact') ??
+        '$origin/api/get-contact/';
+    try {
+      final response = await _client.dio.get<dynamic>(
+        url,
+        queryParameters: {'no': contactId},
+        options: Options(
+          headers: headers,
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        return _asContactMap(response.data);
+      }
+    } catch (_) {}
+    return null;
   }
 
   // POST - Contact durumunu güncelle (çalışan endpoint kullanarak)
@@ -875,6 +1043,7 @@ class ContactApiRepository with UpdateMixin {
         }
 
         final professions = RefProfessionResponseModel.fromJson(professionsData);
+        ProfessionCatalog.remember(professions.professions);
         return Right(professions);
       } else {
         return Left(ServerFailure(message: response.data['message'] ?? 'Meslekler getirilemedi'));

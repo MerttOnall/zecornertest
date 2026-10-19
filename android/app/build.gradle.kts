@@ -29,7 +29,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.zeholding.zecornertest"
+        applicationId = "com.zeholding.zecorner.test"
         minSdk = maxOf(flutter.minSdkVersion, 22)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -47,11 +47,7 @@ android {
 
     buildTypes {
         release {
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }

@@ -1,3 +1,5 @@
+import 'package:zecorner/models/contact/contact_api_model.dart';
+
 class ContactsApiModel {
   final int contactNo;
   final String title;
@@ -46,6 +48,7 @@ class ContactsApiModel {
   final String? connectedContactDescription;
   final bool isCustomer;
   final String slug;
+  final List<Map<String, dynamic>>? detailAttachments;
 
   ContactsApiModel({
     required this.contactNo,
@@ -95,6 +98,7 @@ class ContactsApiModel {
     this.connectedContactDescription,
     required this.isCustomer,
     required this.slug,
+    this.detailAttachments,
   });
 
   static int _asTypeCode(dynamic v) {
@@ -125,7 +129,9 @@ class ContactsApiModel {
 
   factory ContactsApiModel.fromJson(Map<String, dynamic> json) {
     return ContactsApiModel(
-      contactNo: _asInt(json['contact_no']),
+      contactNo: _asInt(
+        json['contact_no'] ?? json['contactNo'] ?? json['no'],
+      ),
       title: _asString(json['title']),
       name: _asString(json['name']),
       surname: _asString(json['surname']),
@@ -145,7 +151,7 @@ class ContactsApiModel {
       isCompany: json['is_company'] == true,
       isEmployee: json['is_employee'] == true,
       isAgency: json['is_agency'] == true,
-      birthday: json['birthday']?.toString(),
+      birthday: ContactApiModel.birthdayFrom(json) ?? json['birthday']?.toString(),
       professionCode: json['profession_code']?.toString(),
       professionDescription: json['profession_description']?.toString(),
       educationCode: json['education_code']?.toString(),
@@ -174,6 +180,7 @@ class ContactsApiModel {
           json['connected_contact_description']?.toString(),
       isCustomer: json['is_customer'] == true,
       slug: _asString(json['slug']),
+      detailAttachments: ContactApiModel.attachmentsFrom(json),
     );
   }
 

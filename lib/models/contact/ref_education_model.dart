@@ -1,16 +1,21 @@
 class RefEducationModel {
+  final String id;
   final String code;
   final String description;
 
   RefEducationModel({
+    this.id = '',
     required this.code,
     required this.description,
   });
 
   factory RefEducationModel.fromJson(Map<String, dynamic> json) {
+    final rawId = (json['id'] ?? '').toString();
+    final rawCode = (json['code'] ?? '').toString();
     return RefEducationModel(
-      code: json['code'] ?? '',
-      description: json['description'] ?? '',
+      id: rawId.isNotEmpty ? rawId : rawCode,
+      code: rawCode.isNotEmpty ? rawCode : rawId,
+      description: (json['description'] ?? json['name'] ?? '').toString(),
     );
   }
 

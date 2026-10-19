@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zecorner/core/cubit/auth_cubit.dart';
 import 'package:zecorner/presentation/screens/reports/cari_report_panel.dart';
 import 'package:zecorner/presentation/screens/reports/general_report_panel.dart';
@@ -13,8 +14,9 @@ import 'package:zecorner/presentation/widgets/navbar/danisman_navbar.dart';
 import 'package:zecorner/presentation/widgets/role-sidebar/role_sidebar.dart';
 import 'package:zecorner/presentation/widgets/status/app_status_view.dart';
 
-/// Raporlar. Admin tüm sekmeleri görür.
-/// Danışman ve broker yalnız kendi ofisinin satış raporunu görür.
+/// Raporlar.
+/// Admin ile franchise bölge müdürü / bölge yöneticisi herkesi görür.
+/// Broker yalnız kendi ofisinin, danışman yalnız kendi işlemlerinin satış raporunu görür.
 class ReportsScreen extends StatefulWidget {
   final ReportsTab initialTab;
 
@@ -33,6 +35,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   late ReportsTab _activeTab;
   bool _checkingAccess = true;
   bool _isAdmin = false;
+  bool _seesAll = false;
   bool _isAdvisor = false;
   bool _isBroker = false;
 
@@ -46,14 +49,20 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Future<void> _checkAdminAccess() async {
     try {
       final roleCodes = await context.read<AuthCubit>().getUserRoleCodes();
+      final prefs = await SharedPreferences.getInstance();
       if (!mounted) return;
-      final isAdmin = roleCodes.contains('role_admin');
-      final isBroker = roleCodes.contains('role_office_broker') ||
+      final isAdmin = roleCodes.contains('role_admin') ||
+          prefs.getBool('userIsAdmin') == true;
+      final seesAll = isAdmin ||
+          _seesEverySalesReport(prefs.getString('userTypeDescription'));
+      final isBrokerRole = roleCodes.contains('role_office_broker') ||
           roleCodes.contains('role_office_assistant');
       setState(() {
         _isAdmin = isAdmin;
-        _isBroker = roleCodes.contains('role_office_broker') && !isAdmin;
-        _isAdvisor = roleCodes.contains('role_advisor') && !isAdmin && !isBroker;
+        _seesAll = seesAll;
+        _isBroker = roleCodes.contains('role_office_broker') && !seesAll;
+        _isAdvisor =
+            roleCodes.contains('role_advisor') && !seesAll && !isBrokerRole;
         _checkingAccess = false;
         if (_isAdvisor || _isBroker) _activeTab = ReportsTab.sales;
       });
@@ -61,9 +70,33 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (!mounted) return;
       setState(() {
         _isAdmin = false;
+        _seesAll = false;
         _checkingAccess = false;
       });
     }
+  }
+
+  /// Admin dışındaki tam görünüm: saha / satış bölge müdürü ve bölge yöneticisi.
+  /// Diğer franchise unvanları bu listeye girmez.
+  bool _seesEverySalesReport(String? typeDescription) {
+    if (AuthCubit.isFranchiseRegionDirector(typeDescription)) return true;
+    final normalized = (typeDescription ?? '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .toLowerCase()
+        .replaceAll('ı', 'i')
+        .replaceAll('ş', 's')
+        .replaceAll('ğ', 'g')
+        .replaceAll('ü', 'u')
+        .replaceAll('ö', 'o')
+        .replaceAll('ç', 'c');
+    const titles = {
+      'franchise saha ve gelistirme bolge muduru',
+      'franchise saha ve gelistirme bolge yoneticisi',
+      'franchise satis ve gelistirme bolge muduru',
+      'franchise satis ve gelistirme bolge yoneticisi',
+    };
+    return titles.contains(normalized);
   }
 
   Widget _buildBody() {
@@ -74,7 +107,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       );
     }
 
-    if (!_isAdmin && !_isAdvisor && !_isBroker) {
+    if (!_seesAll && !_isAdvisor && !_isBroker) {
       return AppStatusView.error(
         title: 'Erişim engellendi',
         message: 'Bu sayfa yalnızca admin kullanıcılar içindir.',
@@ -171,12 +204,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
 
   Widget _buildActivePanel() {
-    if (_isAdvisor || _isBroker) {
-      return const SalesReportPanel(officeScoped: true);
+    if (_isBroker) {
+      return const SalesReportPanel(scope: SalesReportScope.office);
+    }
+    if (_isAdvisor) {
+      return const SalesReportPanel(scope: SalesReportScope.self);
     }
     switch (_activeTab) {
       case ReportsTab.sales:
-        return const SalesReportPanel();
+        return const SalesReportPanel(scope: SalesReportScope.all);
       case ReportsTab.yearly:
         return const YearlySalesReportPanel();
       case ReportsTab.cari:

@@ -1123,7 +1123,7 @@ class _FranchiseMapScreenState extends State<FranchiseMapScreen> {
             TileLayer(
               urlTemplate:
                   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-              userAgentPackageName: 'com.zeholding.zecornertest',
+              userAgentPackageName: 'com.zecorner.app',
               maxNativeZoom: 19,
               maxZoom: 19,
             ),

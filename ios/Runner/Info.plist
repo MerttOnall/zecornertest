@@ -95,10 +95,16 @@
 				</dict>
 			</dict>
 		</dict>
-		<key>ITSAppUsesNonExemptEncryption</key>
-		<false/>
+		<key>NSBonjourServices</key>
+		<array>
+			<string>_dartobservatory._tcp</string>
+		</array>
 		<key>io.flutter.embedded_views_preview</key>
 		<true/>
+		<key>CFBundleSupportedPlatforms</key>
+		<array>
+			<string>iPhoneOS</string>
+		</array>
 		<!-- url_launcher: tel: için canLaunchUrl / arama (iOS 9+) -->
 		<key>LSApplicationQueriesSchemes</key>
 		<array>

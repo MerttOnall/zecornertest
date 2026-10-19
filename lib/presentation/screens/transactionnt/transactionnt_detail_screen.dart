@@ -5,6 +5,7 @@ import 'package:zecorner/presentation/widgets/navbar/admin_navbar.dart';
 import 'package:zecorner/models/list/listing_panel_model.dart';
 import 'package:zecorner/core/utils/image_utils.dart';
 import 'package:zecorner/infrastructure/list/listing_update_service.dart';
+import 'package:zecorner/infrastructure/list/my_listings_repository.dart';
 
 class TransactionDetailScreen extends StatefulWidget {
   final ListingPanelModel listing;
@@ -21,9 +22,11 @@ class TransactionDetailScreen extends StatefulWidget {
 class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ListingUpdateService _listingService = ListingUpdateService();
+  final MyListingsRepository _listingsRepository = MyListingsRepository();
   
   ListingPanelModel? _listing;
   bool _isLoading = false;
+  bool _isDeciding = false;
 
   @override
   void initState() {
@@ -193,17 +196,12 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                // API çağrısı yapılacak
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Onay işlemi başarıyla tamamlandı'),
-                                    backgroundColor: Color(0xFFE53935),
-                                  ),
-                                );
-                                Navigator.pop(context, true); // Geri dön ve listeyi yenile
-                              },
+                              onPressed: _isDeciding
+                                  ? null
+                                  : () {
+                                      Navigator.pop(context);
+                                      _submitApprove();
+                                    },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFE53935),
                                 padding: const EdgeInsets.symmetric(vertical: 14),
@@ -387,14 +385,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                                 }
                                 
                                 Navigator.pop(context);
-                                // API çağrısı yapılacak - reason ile birlikte
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('İlan reddedildi'),
-                                    backgroundColor: Color(0xFFE53935),
-                                  ),
-                                );
-                                Navigator.pop(context, true); // Geri dön ve listeyi yenile
+                                _submitReject(reason);
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFE53935),
@@ -423,6 +414,44 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Future<void> _submitApprove() async {
+    final listingId = _listing?.id ?? widget.listing.id;
+    if (_isDeciding || listingId.trim().isEmpty) return;
+    setState(() => _isDeciding = true);
+    final result = await _listingsRepository.approveClosureListing(listingId);
+    if (!mounted) return;
+    setState(() => _isDeciding = false);
+    result.fold(
+      (failure) => _showDecisionMessage(failure.message, const Color(0xFFE53935)),
+      (message) => Navigator.pop(context, message),
+    );
+  }
+
+  Future<void> _submitReject(String reason) async {
+    final listingId = _listing?.id ?? widget.listing.id;
+    if (_isDeciding || listingId.trim().isEmpty) return;
+    setState(() => _isDeciding = true);
+    final result = await _listingsRepository.rejectClosureListing(
+      listingId,
+      message: reason,
+    );
+    if (!mounted) return;
+    setState(() => _isDeciding = false);
+    result.fold(
+      (failure) => _showDecisionMessage(failure.message, const Color(0xFFE53935)),
+      (message) => Navigator.pop(context, message),
+    );
+  }
+
+  void _showDecisionMessage(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
       ),
     );
   }
@@ -684,7 +713,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 OutlinedButton(
-                                  onPressed: _rejectListing,
+                                  onPressed: _isDeciding ? null : _rejectListing,
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: const Color(0xFFE53935),
                                     side: const BorderSide(color: Color(0xFFE53935)),
@@ -698,7 +727,7 @@ class _TransactionDetailScreenState extends State<TransactionDetailScreen> {
                                 ),
                                 const SizedBox(width: 8),
                                 ElevatedButton(
-                                  onPressed: _approveListing,
+                                  onPressed: _isDeciding ? null : _approveListing,
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Colors.green,
                                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

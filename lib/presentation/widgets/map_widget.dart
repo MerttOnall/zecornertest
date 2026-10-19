@@ -3,17 +3,17 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:zecorner/core/location/nominatim_geocoding.dart';
 
-/// Sokak haritası: Carto CDN (mobilde OSM doğrudan sık sık karo gelmez).
+/// Sokak haritası. Carto rastertiles anahtarsız kullanımda karoların üzerine
+/// "API KEY REQUIRED" basıyor. Esri World Street Map anahtar istemez.
 /// Yedek: tile.openstreetmap.org ([Usage Policy](https://operations.osmfoundation.org/policies/tiles/)).
 TileLayer _zecornerStreetTileLayer() {
   return TileLayer(
     urlTemplate:
-        'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-    subdomains: const ['a', 'b', 'c', 'd'],
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
     fallbackUrl: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    userAgentPackageName: 'zecorner',
-    maxNativeZoom: 20,
-    maxZoom: 20,
+    userAgentPackageName: 'com.zecorner.app',
+    maxNativeZoom: 19,
+    maxZoom: 19,
   );
 }
 
@@ -368,7 +368,7 @@ class MapDisplayWidget extends StatelessWidget {
                       right: 4,
                       bottom: address != null ? 48 : 4,
                       child: Text(
-                        '© OSM © CARTO',
+                        '© Esri',
                         style: TextStyle(
                           fontSize: 9,
                           color: Colors.black.withValues(alpha: 0.45),

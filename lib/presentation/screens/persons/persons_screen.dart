@@ -38,6 +38,7 @@ class Person {
   final String nationality;
   /// ISO ülke kodu (adres ülkesi — API `country`)
   final String? country;
+  final List<Map<String, dynamic>>? attachments;
 
   Person({
     required this.id,
@@ -59,6 +60,7 @@ class Person {
     required this.isActive,
     this.nationality = '',
     this.country,
+    this.attachments,
   });
 
   String get fullName => '$firstName $lastName';
@@ -95,6 +97,7 @@ extension ContactsApiModelToPerson on ContactsApiModel {
       district: displayDistrict,
       tcNumber: tcIdNumber ?? '',
       birthDate: birthday ?? '',
+      attachments: detailAttachments,
       address: address ?? '',
       profession: professionDescription ?? '',
       experience: sectoralExperience ?? '',
@@ -386,6 +389,7 @@ class _PersonsScreenState extends State<PersonsScreen>
                     contact.connectedContactDescription,
                 isCustomer: contact.isCustomer,
                 slug: contact.slug,
+                detailAttachments: contact.detailAttachments,
               );
             }
           });

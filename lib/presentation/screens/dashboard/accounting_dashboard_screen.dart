@@ -62,8 +62,8 @@ class _AccountingDashboardScreenState extends State<AccountingDashboardScreen>
   
   // Chart Filter State
   String _selectedMetric = "Gelir";
-  int? _selectedYear;
-  int? _selectedMonth;
+  int? _selectedYear = DateTime.now().year;
+  int? _selectedMonth = DateTime.now().month;
   
   // Card Expansion State
   final Map<String, bool> _cardExpanded = {
@@ -298,7 +298,10 @@ class _AccountingDashboardScreenState extends State<AccountingDashboardScreen>
         print('📞 Muhasebe Dashboard Daily Revenue API çağrılıyor...');
         late Either dailyResult;
         try {
-          dailyResult = await _dashboardRepo.getDashboardDailyRevenue();
+          dailyResult = await _dashboardRepo.getDashboardDailyRevenue(
+            year: _selectedYear,
+            month: _selectedMonth,
+          );
           print('✅ Daily Revenue API çağrısı tamamlandı');
         } catch (e) {
           print('❌ Daily Revenue API çağrısında hata: $e');
@@ -1053,8 +1056,13 @@ class _AccountingDashboardScreenState extends State<AccountingDashboardScreen>
 
   /// Para formatı için yardımcı metot
   String _formatPrice(String priceString) {
-    final price = double.tryParse(priceString) ?? 0.0;
-    return "₺${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.')}";
+    final price = double.tryParse(priceString.replaceAll(',', '.')) ?? 0.0;
+    final parts = price.toStringAsFixed(2).split('.');
+    final formattedInteger = parts[0].replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]}.',
+    );
+    return '₺$formattedInteger,${parts[1]}';
   }
 
   /// Maksimum gelir değerini hesapla
@@ -1103,46 +1111,30 @@ class _AccountingDashboardScreenState extends State<AccountingDashboardScreen>
     return months[month];
   }
 
-  /// API'den gelen verilerdeki yılları döndür
-  List<int> _getAvailableYears() {
-    if (_dailyData == null || _dailyData!.days.isEmpty) {
-      return [];
-    }
-    
-    final years = <int>{};
-    for (var day in _dailyData!.days) {
-      try {
-        final dayDate = DateTime.parse(day.day);
-        years.add(dayDate.year);
-      } catch (e) {
-        print('⚠️ Tarih parse hatası: ${day.day} - $e');
-      }
-    }
-    
-    final sortedYears = years.toList()..sort((a, b) => b.compareTo(a)); // Yeni yıldan eskiye
-    return sortedYears;
+  /// Web ile aynı: 2024’ten bu yıla, en yeni yıl üstte.
+  List<int> _getAvailableYears() => DashboardRepository.chartFilterYears();
+
+  /// Web ile aynı: seçilen yıl için 12 ay.
+  List<int> _getAvailableMonthsForYear(int year) {
+    if (year <= 0) return const [];
+    return DashboardRepository.chartFilterMonths();
   }
 
-  /// Seçili yıldaki mevcut ayları döndür
-  List<int> _getAvailableMonthsForYear(int year) {
-    if (_dailyData == null || _dailyData!.days.isEmpty) {
-      return [];
-    }
-    
-    final months = <int>{};
-    for (var day in _dailyData!.days) {
+  Future<void> _reloadChart() async {
+    final year = _selectedYear ?? DateTime.now().year;
+    final month = _selectedMonth ?? DateTime.now().month;
+    final result = await _dashboardRepo.getDashboardDailyRevenue(
+      year: year,
+      month: month,
+    );
+    if (!mounted) return;
+    result.fold((_) {}, (data) {
       try {
-        final dayDate = DateTime.parse(day.day);
-        if (dayDate.year == year) {
-          months.add(dayDate.month);
-        }
+        setState(() => _dailyData = AdminDailyModel.fromJson(data));
       } catch (e) {
-        print('⚠️ Tarih parse hatası: ${day.day} - $e');
+        print('⚠️ Grafik yenilenemedi: $e');
       }
-    }
-    
-    final sortedMonths = months.toList()..sort((a, b) => b.compareTo(a)); // Yeni aydan eskiye
-    return sortedMonths;
+    });
   }
 
 
@@ -1453,7 +1445,9 @@ class _AccountingDashboardScreenState extends State<AccountingDashboardScreen>
                         if (selectedYear != null) {
                           setState(() {
                             _selectedYear = selectedYear;
+                            _selectedMonth ??= DateTime.now().month;
                           });
+                          _reloadChart();
                         }
                       },
                       child: Row(
@@ -1738,6 +1732,7 @@ class _AccountingDashboardScreenState extends State<AccountingDashboardScreen>
                           setState(() {
                             _selectedMonth = selectedMonth;
                           });
+                          _reloadChart();
                         }
                       },
                       child: Row(
@@ -1776,10 +1771,11 @@ class _AccountingDashboardScreenState extends State<AccountingDashboardScreen>
             ElevatedButton(
               onPressed: () {
                 setState(() {
-                  _selectedYear = null;
-                  _selectedMonth = null;
+                  _selectedYear = DateTime.now().year;
+                  _selectedMonth = DateTime.now().month;
                   _selectedMetric = "Gelir";
                 });
+                _reloadChart();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE53935),

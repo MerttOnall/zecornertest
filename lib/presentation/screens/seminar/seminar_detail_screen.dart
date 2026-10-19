@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:zecorner/core/cubit/auth_cubit.dart';
 import 'package:zecorner/infrastructure/seminar/seminar_repository.dart';
 import 'package:zecorner/models/seminar/seminar_model.dart';
 import 'package:zecorner/presentation/screens/seminar/widgets/seminar_event_card.dart';
 import 'package:zecorner/presentation/widgets/admin-panel/admin_panel_appbar.dart';
+import 'package:zecorner/presentation/widgets/role-sidebar/role_sidebar.dart';
 import 'package:zecorner/router/app_router.dart';
 
 class SeminarDetailScreen extends StatefulWidget {
@@ -17,6 +21,7 @@ class _SeminarDetailScreenState extends State<SeminarDetailScreen> {
   Seminar? _seminar;
   bool _isLoading = false;
   bool _didInit = false;
+  bool _canManage = false;
   String? _errorMessage;
 
   @override
@@ -24,6 +29,8 @@ class _SeminarDetailScreenState extends State<SeminarDetailScreen> {
     super.didChangeDependencies();
     if (_didInit) return;
     _didInit = true;
+    _canManage = context.read<AuthCubit>().isAdmin;
+    _loadAccess();
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Seminar) {
       _seminar = args;
@@ -45,6 +52,27 @@ class _SeminarDetailScreenState extends State<SeminarDetailScreen> {
       }
     }
     _errorMessage = 'Seminer bilgisi bulunamadı.';
+  }
+
+  Future<void> _loadAccess() async {
+    final prefs = await SharedPreferences.getInstance();
+    final roles = prefs.getStringList('userRoleCodes') ?? [];
+    final permissions = (prefs.getString('userPermissions') ?? '')
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty);
+    final isAdmin = prefs.getBool('userIsAdmin') == true ||
+        roles.contains('role_admin') ||
+        (mounted && context.read<AuthCubit>().isAdmin);
+    if (!mounted) return;
+    setState(() {
+      _canManage = RoleSidebar.allows(
+        'admin_only',
+        isAdmin: isAdmin,
+        roleCodes: roles,
+        permissions: permissions,
+      );
+    });
   }
 
   Future<void> _refreshFromApi(int id) async {
@@ -100,7 +128,7 @@ class _SeminarDetailScreenState extends State<SeminarDetailScreen> {
         useBackButton: true,
         onMenuPressed: () => Navigator.pop(context),
         actions: [
-          if (seminar != null)
+          if (seminar != null && _canManage)
             IconButton(
               icon: const Icon(Icons.edit_outlined, color: Colors.white),
               onPressed: () {
@@ -133,7 +161,8 @@ class _SeminarDetailScreenState extends State<SeminarDetailScreen> {
                             showTypeBadge: seminar.type != null,
                             showInstructors: true,
                             logoStyle: seminar.isEducation,
-                            onCtaPressed: seminar.canApply
+                            showCta: _canManage,
+                            onCtaPressed: _canManage && seminar.canApply
                                 ? () => _showApplyFeedback(seminar)
                                 : null,
                           ),

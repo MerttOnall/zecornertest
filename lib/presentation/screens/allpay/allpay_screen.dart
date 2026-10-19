@@ -1120,7 +1120,7 @@ class _AllPayScreenState extends State<AllPayScreen> with SingleTickerProviderSt
         Expanded(
           child: _buildSummaryCard(
             label: 'Toplam Tutar',
-            value: _formatAmount(amounts.totalAmount),
+            value: _formatAmount(amounts.billedAmount),
             icon: Icons.account_balance_wallet_rounded,
           ),
         ),

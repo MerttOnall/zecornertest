@@ -75,8 +75,8 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   // Chart Filter State
   String _selectedMetric = "Gelir";
-  int? _selectedYear;
-  int? _selectedMonth;
+  int? _selectedYear = DateTime.now().year;
+  int? _selectedMonth = DateTime.now().month;
 
   // Card Expansion State
   final Map<String, bool> _cardExpanded = {
@@ -270,6 +270,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     // Dashboard verilerini yükle - frame tamamlandıktan sonra
     print('🎬 _loadDashboardData çağrılıyor...');
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       print('🎬 PostFrameCallback ile _loadDashboardData çağrılıyor...');
       RoleSidebar.preloadSidebarData(context);
       _loadDashboardData();
@@ -428,7 +429,10 @@ class _DashboardScreenState extends State<DashboardScreen>
       late Either dailyResult;
       try {
         // Admin dashboard'da direkt admin endpoint'ini kullan
-        dailyResult = await _dashboardRepo.getAdminDailyRevenue();
+        dailyResult = await _dashboardRepo.getAdminDailyRevenue(
+          year: _selectedYear,
+          month: _selectedMonth,
+        );
         print('✅ Admin Daily Revenue API çağrısı tamamlandı');
       } catch (e) {
         print('❌ Admin Daily Revenue API çağrısında hata: $e');
@@ -884,10 +888,15 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  /// Para formatı için yardımcı metot
+  /// Para formatı: ₺6.825.609,70
   String _formatPrice(String priceString) {
-    final price = double.tryParse(priceString) ?? 0.0;
-    return "₺${price.toStringAsFixed(0).replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.')}";
+    final price = double.tryParse(priceString.replaceAll(',', '.')) ?? 0.0;
+    final parts = price.toStringAsFixed(2).split('.');
+    final formattedInteger = parts[0].replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]}.',
+    );
+    return '₺$formattedInteger,${parts[1]}';
   }
 
   /// Maksimum gelir değerini hesapla
@@ -984,48 +993,30 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
   }
 
-  /// API'den gelen verilerdeki yılları döndür
-  List<int> _getAvailableYears() {
-    if (_dailyData == null || _dailyData!.days.isEmpty) {
-      return [];
-    }
+  /// Web ile aynı: 2024’ten bu yıla, en yeni yıl üstte.
+  List<int> _getAvailableYears() => DashboardRepository.chartFilterYears();
 
-    final years = <int>{};
-    for (var day in _dailyData!.days) {
-      try {
-        final dayDate = DateTime.parse(day.day);
-        years.add(dayDate.year);
-      } catch (e) {
-        print('⚠️ Tarih parse hatası: ${day.day} - $e');
-      }
-    }
-
-    final sortedYears = years.toList()
-      ..sort((a, b) => b.compareTo(a)); // Yeni yıldan eskiye
-    return sortedYears;
+  /// Web ile aynı: seçilen yıl için 12 ay.
+  List<int> _getAvailableMonthsForYear(int year) {
+    if (year <= 0) return const [];
+    return DashboardRepository.chartFilterMonths();
   }
 
-  /// Seçili yıldaki mevcut ayları döndür
-  List<int> _getAvailableMonthsForYear(int year) {
-    if (_dailyData == null || _dailyData!.days.isEmpty) {
-      return [];
-    }
-
-    final months = <int>{};
-    for (var day in _dailyData!.days) {
+  Future<void> _reloadChart() async {
+    final year = _selectedYear ?? DateTime.now().year;
+    final month = _selectedMonth ?? DateTime.now().month;
+    final result = await _dashboardRepo.getAdminDailyRevenue(
+      year: year,
+      month: month,
+    );
+    if (!mounted) return;
+    result.fold((_) {}, (data) {
       try {
-        final dayDate = DateTime.parse(day.day);
-        if (dayDate.year == year) {
-          months.add(dayDate.month);
-        }
+        setState(() => _dailyData = AdminDailyModel.fromJson(data));
       } catch (e) {
-        print('⚠️ Tarih parse hatası: ${day.day} - $e');
+        print('⚠️ Grafik yenilenemedi: $e');
       }
-    }
-
-    final sortedMonths = months.toList()
-      ..sort((a, b) => b.compareTo(a)); // Yeni aydan eskiye
-    return sortedMonths;
+    });
   }
 
   Widget _buildIncomeChart() {
@@ -1371,7 +1362,9 @@ class _DashboardScreenState extends State<DashboardScreen>
                       if (selectedYear != null) {
                         setState(() {
                           _selectedYear = selectedYear;
+                          _selectedMonth ??= DateTime.now().month;
                         });
+                        _reloadChart();
                       }
                     },
                     child: Row(
@@ -1770,6 +1763,7 @@ class _DashboardScreenState extends State<DashboardScreen>
                                 setState(() {
                                   _selectedMonth = selectedMonth;
                                 });
+                                _reloadChart();
                               }
                             },
                       child: Row(
@@ -1828,10 +1822,11 @@ class _DashboardScreenState extends State<DashboardScreen>
             child: ElevatedButton(
               onPressed: () {
                 setState(() {
-                  _selectedYear = null;
-                  _selectedMonth = null;
+                  _selectedYear = DateTime.now().year;
+                  _selectedMonth = DateTime.now().month;
                   _selectedMetric = "Gelir";
                 });
+                _reloadChart();
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryRed,

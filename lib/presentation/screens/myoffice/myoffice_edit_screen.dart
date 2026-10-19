@@ -96,6 +96,19 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
   late TextEditingController _referencesController;
   late TextEditingController _companyInfoController;
   late TextEditingController _postCodeController;
+  late TextEditingController _invoiceTitleController;
+  late TextEditingController _invoiceTaxOfficeController;
+  late TextEditingController _invoiceTaxNumberController;
+  late TextEditingController _invoiceCountryController;
+  late TextEditingController _invoiceCityController;
+  late TextEditingController _invoiceDistrictController;
+  late TextEditingController _invoiceQuarterController;
+  late TextEditingController _invoiceAddressController;
+  late TextEditingController _ttbsController;
+  bool _companyEmail = true;
+  String? _loadedProfessionCode;
+  String? _loadedEducationCode;
+  Map<String, dynamic>? _preservedNestedDetail;
 
   // Form validation
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
@@ -107,6 +120,9 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
   PlatformFile? _criminalRecordFile;
   PlatformFile? _professionalCertificateFile;
   PlatformFile? _realEstatePermitFile;
+  PlatformFile? _identityFrontFile;
+  PlatformFile? _identityBackFile;
+  PlatformFile? _taxPlateFile;
 
   // File upload state
   String? _profileImageId;
@@ -114,6 +130,9 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
   String? _criminalRecordFileId;
   String? _professionalCertificateFileId;
   String? _realEstatePermitFileId;
+  String? _identityFrontFileId;
+  String? _identityBackFileId;
+  String? _taxPlateFileId;
   bool _isUploadingFile = false;
 
   // Mevcut belgeler (API'den yüklenen - güncellemede korunacak)
@@ -186,6 +205,15 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     _referencesController = TextEditingController();
     _companyInfoController = TextEditingController();
     _postCodeController = TextEditingController();
+    _invoiceTitleController = TextEditingController();
+    _invoiceTaxOfficeController = TextEditingController();
+    _invoiceTaxNumberController = TextEditingController();
+    _invoiceCountryController = TextEditingController();
+    _invoiceCityController = TextEditingController();
+    _invoiceDistrictController = TextEditingController();
+    _invoiceQuarterController = TextEditingController();
+    _invoiceAddressController = TextEditingController();
+    _ttbsController = TextEditingController();
 
     // Initialize form model
     _formModel = PersonEditFormModel.empty();
@@ -219,7 +247,7 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
   void _populateFromOfficePerson(OfficePerson person) {
     _firstNameController.text = person.firstName;
     _lastNameController.text = person.lastName;
-    _emailController.text = person.email;
+    _setEmailField(person.email);
     _connectedPersonController.text = person.office;
     _experienceController.text = person.personCount;
     _formModel = _formModel.copyWith(
@@ -257,7 +285,7 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
   void _applyContactApiData(ContactApiModel person) {
     _firstNameController.text = person.name;
     _lastNameController.text = person.surname;
-    _emailController.text = person.eMail;
+    _setEmailField(person.eMail);
     _phoneController.text = _formatPhoneForDisplay(person.tel);
     _tcNumberController.text = person.tcIdNumber ?? '';
     _birthDateController.text = _formatBirthDateForDisplay(person.birthday);
@@ -277,10 +305,13 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     _existingDetailAttachments = person.detailAttachments ?? [];
 
     _selectedGender = person.sex == 1 ? 'M' : person.sex == 2 ? 'F' : null;
-    _selectedBirthPlace = person.birthPlaceName;
-    _selectedMaritalStatus = person.maritalStatus;
-    _selectedBodySize = person.size;
+    _selectedBirthPlace = person.birthPlaceName ?? person.birthPlaceCode?.toString();
+    _selectedMaritalStatus = _maritalLabel(person.maritalStatus);
+    _selectedBodySize = _bodySizeLabel(person.size);
     _isForeignNational = person.isForeignNationality ?? false;
+    _loadedProfessionCode = person.professionCode;
+    _loadedEducationCode = person.educationCode;
+    _preservedNestedDetail = person.preservedNestedDetail;
     _selectedConnectedPersonId = person.connectedContact?.toString();
     if (person.country != null && _countries.isNotEmpty) {
       try {
@@ -312,46 +343,74 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
       companyInfo: StringField(person.whereYouHeardUs ?? ''),
       selectedPersonType: person.typeDescription,
       selectedConsultantLevel: null,
-      selectedProfession: person.professionDescription ?? 'Diğer',
-      selectedEducation: person.educationDescription ?? 'Üniversite',
-      selectedCity: person.city,
-      selectedDistrict: person.district,
-      selectedNeighborhood: person.quarterName,
+      selectedProfession: person.professionDescription,
+      selectedEducation: person.educationDescription,
+      selectedCity: person.provinceName ?? person.city,
+      selectedDistrict: person.districtName ?? person.district,
+      selectedNeighborhood: person.quarterName ?? person.quarterCode,
       isActive: person.status == 1,
       campaignConsent: person.marketingCommunicationPermission,
       isCustomConsultant: false,
     );
     _rememberTypeCode(person.type);
+    _syncLookups();
+    _syncLocationLabels();
 
     // Mevcut belgelerden file ID'leri çıkar
     for (final att in _existingDetailAttachments) {
-      final type = (att['type'] ?? att['id'] ?? '').toString().toUpperCase();
+      final type = (att['type'] ?? '')
+          .toString()
+          .toUpperCase()
+          .replaceAll('İ', 'I')
+          .replaceAll('İ', 'I')
+          .replaceAll('Ş', 'S')
+          .replaceAll('Ğ', 'G')
+          .replaceAll('Ü', 'U')
+          .replaceAll('Ö', 'O')
+          .replaceAll('Ç', 'C');
+      final label = [
+        att['type'],
+        att['id'],
+        att['type_description'],
+        att['description'],
+      ].where((part) => part != null).join(' ');
       final s3Id = att['attachment'] ?? att['s3Id'] ?? att['fileId'];
       if (s3Id != null && s3Id.toString().isNotEmpty) {
-        if (type.contains('DIPLOMA')) _diplomaFileId = s3Id.toString();
-        else if (type.contains('CRIMINAL')) _criminalRecordFileId = s3Id.toString();
-        else if (type.contains('PROFESSIONAL')) _professionalCertificateFileId = s3Id.toString();
-        else if (type.contains('REAL_ESTATE') || type.contains('PERMIT')) _realEstatePermitFileId = s3Id.toString();
+        if (type.contains('IDENTITY_DOCUMENT_FRONT') ||
+            type.contains('IDENTITY_FRONT')) {
+          _identityFrontFileId = s3Id.toString();
+        } else if (type.contains('IDENTITY_DOCUMENT_BACK') ||
+            type.contains('IDENTITY_BACK')) {
+          _identityBackFileId = s3Id.toString();
+        } else if (type == 'IDENTITY_DOCUMENT' && _identityFrontFileId == null) {
+          _identityFrontFileId = s3Id.toString();
+        } else if (type.contains('TAX_PLATE') || type.contains('VERGI')) {
+          _taxPlateFileId = s3Id.toString();
+        } else if (type.contains('DIPLOMA') ||
+            type.contains('GRADUATION') ||
+            type.contains('MEZUN')) {
+          _diplomaFileId = s3Id.toString();
+        } else if (type.contains('CRIMINAL') || type.contains('ADLI SICIL')) {
+          _criminalRecordFileId = s3Id.toString();
+        } else if (_isProfessionalCertificate(label)) {
+          _professionalCertificateFileId = s3Id.toString();
+        } else if (type.contains('REAL_ESTATE') ||
+            type.contains('AUTHORIZATION') ||
+            type.contains('PERMIT') ||
+            type.contains('TASINMAZ')) {
+          _realEstatePermitFileId = s3Id.toString();
+        }
       }
     }
+    _fillInvoiceFields();
 
-    if (mounted) {
-      setState(() {});
-      if (_provinces.isNotEmpty && person.city != null && person.city!.isNotEmpty) {
-        try {
-          final province = _provinces.firstWhere(
-            (p) => p.name == person.city,
-          );
-          _loadDistrictsByProvince(province.code, restoreAddress: true);
-        } catch (_) {}
-      }
-    }
+    if (mounted) setState(() {});
   }
 
   void _applyOfficePersonApiData(OfficePersonsApiModel person) {
     _firstNameController.text = person.name ?? _person!.firstName;
     _lastNameController.text = person.surname ?? _person!.lastName;
-    _emailController.text = person.eMail ?? _person!.email;
+    _setEmailField(person.eMail ?? _person!.email);
     _phoneController.text = _formatPhoneForDisplay(person.tel ?? '');
     _tcNumberController.text = person.tcIdNumber ?? '';
     _birthDateController.text = _formatBirthDateForDisplay(person.birthday);
@@ -375,21 +434,308 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     if (mounted) setState(() {});
   }
 
-  String _formatPhoneForDisplay(String tel) {
-    if (tel.isEmpty) return '';
-    final digits = tel.replaceAll(RegExp(r'\D'), '');
-    if (digits.length < 10) return tel;
-    final withoutCountry = digits.length == 12 && digits.startsWith('90')
-        ? digits.substring(2)
-        : digits.length == 11 && digits.startsWith('0')
-            ? digits.substring(1)
-            : digits.length >= 10
-                ? digits.substring(digits.length - 10)
-                : digits;
-    if (withoutCountry.length == 10) {
-      return '${withoutCountry.substring(0, 3)} ${withoutCountry.substring(3, 6)} ${withoutCountry.substring(6)}';
+  static const String _companyEmailDomain = '@zecorner.com';
+
+  void _setEmailField(String email) {
+    final value = email.trim();
+    if (value.toLowerCase().endsWith(_companyEmailDomain)) {
+      _companyEmail = true;
+      _emailController.text =
+          value.substring(0, value.length - _companyEmailDomain.length);
+    } else if (value.contains('@')) {
+      _companyEmail = false;
+      _emailController.text = value;
+    } else {
+      _companyEmail = true;
+      _emailController.text = value;
     }
-    return tel;
+  }
+
+  String _emailForSave() {
+    final raw = _emailController.text.trim();
+    if (raw.isEmpty) return '';
+    if (raw.contains('@') || !_companyEmail) return raw;
+    return '$raw$_companyEmailDomain';
+  }
+
+  String _subscriberDigits(String tel) {
+    var digits = tel.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('90') && digits.length > 10) {
+      digits = digits.substring(2);
+    } else if (digits.startsWith('0') && digits.length >= 11) {
+      digits = digits.substring(1);
+    }
+    if (digits.length > 10) digits = digits.substring(0, 10);
+    return digits;
+  }
+
+  String _formatPhoneForDisplay(String tel) {
+    if (tel.trim().isEmpty || tel.trim() == '0') return '';
+    final digits = _subscriberDigits(tel);
+    if (digits.isEmpty) return '';
+    final area = digits.substring(0, digits.length < 3 ? digits.length : 3);
+    if (digits.length <= 3) return '+90 ($area';
+    final midEnd = digits.length < 6 ? digits.length : 6;
+    final mid = digits.substring(3, midEnd);
+    if (digits.length <= 6) return '+90 ($area) $mid';
+    return '+90 ($area) $mid-${digits.substring(6)}';
+  }
+
+  String? _maritalLabel(String? raw) {
+    switch (raw) {
+      case 'single':
+      case 'Bekar':
+        return 'Bekar';
+      case 'married':
+      case 'Evli':
+        return 'Evli';
+      case 'divorced':
+      case 'Boşanmış':
+        return 'Boşanmış';
+      case 'widowed':
+      case 'Dul':
+        return 'Dul';
+      default:
+        return null;
+    }
+  }
+
+  String? _maritalApi(String? label) {
+    switch (label) {
+      case 'Bekar':
+        return 'single';
+      case 'Evli':
+        return 'married';
+      case 'Boşanmış':
+        return 'divorced';
+      case 'Dul':
+        return 'widowed';
+      default:
+        return label;
+    }
+  }
+
+  String? _bodySizeLabel(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+    final value = raw.trim().toUpperCase();
+    return sizes.contains(value) ? value : null;
+  }
+
+  void _syncLookups() {
+    if (_professions.isNotEmpty) {
+      for (final profession in _professions) {
+        if (profession.description == _formModel.selectedProfession ||
+            profession.code == _loadedProfessionCode ||
+            profession.id == _loadedProfessionCode) {
+          _formModel = _formModel.copyWith(selectedProfession: profession.description);
+          break;
+        }
+      }
+    }
+    if (_educations.isNotEmpty) {
+      for (final education in _educations) {
+        if (education.description == _formModel.selectedEducation ||
+            education.code == _loadedEducationCode ||
+            education.id == _loadedEducationCode) {
+          _formModel = _formModel.copyWith(selectedEducation: education.description);
+          break;
+        }
+      }
+    }
+  }
+
+  bool _sameLabel(String a, String b) =>
+      a.trim().toUpperCase() == b.trim().toUpperCase();
+
+  ProvinceModel? _matchedProvince() {
+    final raw = _formModel.selectedCity;
+    if (raw == null || raw.isEmpty) return null;
+    for (final province in _provinces) {
+      if (_sameLabel(province.name, raw) || province.code.toString() == raw) {
+        return province;
+      }
+    }
+    return null;
+  }
+
+  DistrictModel? _matchedDistrict() {
+    final raw = _formModel.selectedDistrict;
+    if (raw == null || raw.isEmpty) return null;
+    for (final district in _districts) {
+      if (_sameLabel(district.name, raw) || district.code.toString() == raw) {
+        return district;
+      }
+    }
+    return null;
+  }
+
+  QuarterModel? _matchedQuarter() {
+    final raw = _formModel.selectedNeighborhood;
+    if (raw == null || raw.isEmpty) return null;
+    for (final quarter in _quarters) {
+      if (_sameLabel(quarter.name, raw) || quarter.code.toString() == raw) {
+        return quarter;
+      }
+    }
+    return null;
+  }
+
+  ProvinceModel? _matchedBirthProvince() {
+    final raw = _selectedBirthPlace;
+    if (raw == null || raw.isEmpty) return null;
+    for (final province in _provinces) {
+      if (_sameLabel(province.name, raw) || province.code.toString() == raw) {
+        return province;
+      }
+    }
+    return null;
+  }
+
+  String _nestedText(String key) {
+    return _preservedNestedDetail?[key]?.toString().trim() ?? '';
+  }
+
+  String _labelForProvince(String raw) {
+    if (raw.isEmpty) return '';
+    for (final province in _provinces) {
+      if (province.code.toString() == raw || _sameLabel(province.name, raw)) {
+        return province.name;
+      }
+    }
+    return raw;
+  }
+
+  String _codeForProvince(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    for (final province in _provinces) {
+      if (_sameLabel(province.name, trimmed) || province.code.toString() == trimmed) {
+        return province.code.toString();
+      }
+    }
+    return trimmed;
+  }
+
+  String _labelForCountry(String raw) {
+    if (raw.isEmpty) return '';
+    for (final country in _countries) {
+      if (country.code.toUpperCase() == raw.toUpperCase() ||
+          _sameLabel(country.name, raw)) {
+        return country.name;
+      }
+    }
+    return raw;
+  }
+
+  String _codeForCountry(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    for (final country in _countries) {
+      if (_sameLabel(country.name, trimmed) ||
+          country.code.toUpperCase() == trimmed.toUpperCase()) {
+        return country.code;
+      }
+    }
+    return trimmed;
+  }
+
+  void _fillInvoiceFields() {
+    _invoiceTitleController.text = _nestedText('invoice_title');
+    _invoiceTaxOfficeController.text = _nestedText('invoice_tax_office');
+    _invoiceTaxNumberController.text = _nestedText('invoice_tax_number');
+    _invoiceCountryController.text = _labelForCountry(_nestedText('invoice_country'));
+    _invoiceCityController.text = _labelForProvince(_nestedText('invoice_city'));
+    _invoiceDistrictController.text = _nestedText('invoice_district');
+    _invoiceQuarterController.text = _nestedText('invoice_quarter');
+    _invoiceAddressController.text = _nestedText('invoice_address');
+    _ttbsController.text = _nestedText('ttbs_number');
+  }
+
+  void _stampInvoiceIntoNested() {
+    final nested = Map<String, dynamic>.from(_preservedNestedDetail ?? {});
+    void put(String key, String value) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) {
+        nested.remove(key);
+      } else {
+        nested[key] = trimmed;
+      }
+    }
+
+    put('invoice_title', _invoiceTitleController.text);
+    put('invoice_tax_office', _invoiceTaxOfficeController.text);
+    put('invoice_tax_number', _invoiceTaxNumberController.text);
+    put('invoice_country', _codeForCountry(_invoiceCountryController.text));
+    put('invoice_city', _codeForProvince(_invoiceCityController.text));
+    put('invoice_district', _invoiceDistrictController.text);
+    put('invoice_quarter', _invoiceQuarterController.text);
+    put('invoice_address', _invoiceAddressController.text);
+    put('ttbs_number', _ttbsController.text);
+    _preservedNestedDetail = nested;
+  }
+
+  void _syncLocationLabels() {
+    final cityRaw = _formModel.selectedCity;
+    if (cityRaw != null && cityRaw.isNotEmpty && _provinces.isNotEmpty) {
+      for (final province in _provinces) {
+        if (province.name == cityRaw || province.code.toString() == cityRaw) {
+          if (_formModel.selectedCity != province.name) {
+            _formModel = _formModel.copyWith(selectedCity: province.name);
+          }
+          _loadDistrictsByProvince(province.code, restoreAddress: true);
+          break;
+        }
+      }
+    }
+    final birth = _selectedBirthPlace;
+    if (birth != null && birth.isNotEmpty && _provinces.isNotEmpty) {
+      for (final province in _provinces) {
+        if (province.name == birth || province.code.toString() == birth) {
+          _selectedBirthPlace = province.name;
+          break;
+        }
+      }
+    }
+    final rawCity = _nestedText('invoice_city');
+    if (_invoiceCityController.text.trim().isEmpty ||
+        _invoiceCityController.text.trim() == rawCity) {
+      _invoiceCityController.text = _labelForProvince(rawCity);
+    }
+    final rawCountry = _nestedText('invoice_country');
+    if (_invoiceCountryController.text.trim().isEmpty ||
+        _invoiceCountryController.text.trim() == rawCountry) {
+      _invoiceCountryController.text = _labelForCountry(rawCountry);
+    }
+  }
+
+  Widget _buildProfilePreview(double size) {
+    if (_profileImage != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(size / 2),
+        child: Image.file(_profileImage!, width: size, height: size, fit: BoxFit.cover),
+      );
+    }
+    final id = _profileImageId;
+    if (id == null || id.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final url = id.startsWith('http') ? id : ImageUtils.getProfileImageUrl(id);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(size / 2),
+      child: Image.network(
+        url,
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          width: size,
+          height: size,
+          color: const Color(0xFFF3F4F6),
+          child: Icon(Icons.person, color: Colors.grey, size: size * 0.55),
+        ),
+      ),
+    );
   }
 
   String _formatBirthDateForDisplay(String? birthday) {
@@ -424,6 +770,15 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     _referencesController.dispose();
     _companyInfoController.dispose();
     _postCodeController.dispose();
+    _invoiceTitleController.dispose();
+    _invoiceTaxOfficeController.dispose();
+    _invoiceTaxNumberController.dispose();
+    _invoiceCountryController.dispose();
+    _invoiceCityController.dispose();
+    _invoiceDistrictController.dispose();
+    _invoiceQuarterController.dispose();
+    _invoiceAddressController.dispose();
+    _ttbsController.dispose();
     _personTypeSearchController.dispose();
     super.dispose();
   }
@@ -517,14 +872,12 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
             }
           }
 
+          _syncLookups();
           _isLoadingRefData = false;
         });
-        // Kişi adres bilgisi varsa ilçe/mahalle yükle (web gibi cascade)
-        if (mounted && _formModel.selectedCity != null && _formModel.selectedCity!.isNotEmpty && _provinces.isNotEmpty) {
-          try {
-            final province = _provinces.firstWhere((p) => p.name == _formModel.selectedCity);
-            _loadDistrictsByProvince(province.code, restoreAddress: true);
-          } catch (_) {}
+        if (mounted) {
+          _syncLocationLabels();
+          if (mounted) setState(() {});
         }
       }
     } catch (e) {
@@ -566,10 +919,27 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
               _isLoadingDistricts = false;
               // Kişi ilçe seçiliyse mahalleleri district.quarters'tan al (web API)
               if (_formModel.selectedDistrict != null && _formModel.selectedDistrict!.isNotEmpty) {
-                try {
-                  final district = _districts.firstWhere((d) => d.name == _formModel.selectedDistrict);
+                DistrictModel? district;
+                for (final item in _districts) {
+                  if (_sameLabel(item.name, _formModel.selectedDistrict!) ||
+                      item.code.toString() == _formModel.selectedDistrict) {
+                    district = item;
+                    break;
+                  }
+                }
+                if (district != null) {
+                  _formModel = _formModel.copyWith(selectedDistrict: district.name);
                   _quarters = district.quarters;
-                } catch (_) {}
+                  final rawQuarter = _formModel.selectedNeighborhood;
+                  if (rawQuarter != null && rawQuarter.isNotEmpty) {
+                    for (final quarter in _quarters) {
+                      if (_sameLabel(quarter.name, rawQuarter) || quarter.code.toString() == rawQuarter) {
+                        _formModel = _formModel.copyWith(selectedNeighborhood: quarter.name);
+                        break;
+                      }
+                    }
+                  }
+                }
               }
             });
           }
@@ -630,6 +1000,15 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                 case 'real_estate_permit':
                   _realEstatePermitFileId = fileId;
                   break;
+                case 'identity_front':
+                  _identityFrontFileId = fileId;
+                  break;
+                case 'identity_back':
+                  _identityBackFileId = fileId;
+                  break;
+                case 'tax_plate':
+                  _taxPlateFileId = fileId;
+                  break;
               }
             });
             
@@ -683,6 +1062,12 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
         return 'Mesleki yeterlilik belgesi';
       case 'real_estate_permit':
         return 'Taşınmaz ticari yetki belgesi';
+      case 'identity_front':
+        return 'Nüfus cüzdanı ön';
+      case 'identity_back':
+        return 'Nüfus cüzdanı arka';
+      case 'tax_plate':
+        return 'Vergi levhası';
       default:
         return 'Dosya';
     }
@@ -1210,7 +1595,7 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
         _phoneError = 'Cep telefonu alanı boş bırakılamaz.';
       });
       isValid = false;
-    } else if (_phoneController.text.replaceAll(' ', '').length != 10) {
+    } else if (_subscriberDigits(_phoneController.text).length != 10) {
       setState(() {
         _phoneError = 'Geçerli bir telefon numarası giriniz (10 haneli).';
       });
@@ -1218,12 +1603,12 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     }
 
     // 5. Validate email (ZORUNLU)
-    if (_emailController.text.isEmpty) {
+    if (_emailForSave().isEmpty) {
       setState(() {
         _emailError = 'E-posta alanı boş bırakılamaz.';
       });
       isValid = false;
-    } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(_emailController.text)) {
+    } else if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(_emailForSave())) {
       setState(() {
         _emailError = 'Geçerli bir e-posta adresi giriniz.';
       });
@@ -1356,8 +1741,14 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     // 20. Validate professional certificate (ZORUNLU - yeni dosya veya mevcut belge)
     final hasProfCert = _professionalCertificateFile != null ||
         (_professionalCertificateFileId != null && _professionalCertificateFileId!.isNotEmpty) ||
-        _existingDetailAttachments.any((a) =>
-            (a['type'] ?? a['id'] ?? '').toString().toUpperCase().contains('PROFESSIONAL'));
+        _existingDetailAttachments.any((a) => _isProfessionalCertificate(
+          [
+            a['type'],
+            a['id'],
+            a['type_description'],
+            a['description'],
+          ].where((part) => part != null).join(' '),
+        ));
     if (!hasProfCert) {
       setState(() {
         _professionalCertificateError = 'Mesleki yeterlilik belgesi zorunludur.';
@@ -1434,6 +1825,15 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
             case 'real_estate_permit':
               _realEstatePermitFile = file;
               break;
+            case 'identity_front':
+              _identityFrontFile = file;
+              break;
+            case 'identity_back':
+              _identityBackFile = file;
+              break;
+            case 'tax_plate':
+              _taxPlateFile = file;
+              break;
           }
         });
 
@@ -1483,6 +1883,30 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
             return type.contains('REAL_ESTATE') || type.contains('PERMIT');
           });
           break;
+        case 'identity_front':
+          _identityFrontFile = null;
+          _identityFrontFileId = null;
+          _existingDetailAttachments.removeWhere((a) {
+            final type = (a['type'] ?? a['id'] ?? '').toString().toUpperCase();
+            return type == 'IDENTITY_DOCUMENT_FRONT' || type == 'IDENTITY_DOCUMENT';
+          });
+          break;
+        case 'identity_back':
+          _identityBackFile = null;
+          _identityBackFileId = null;
+          _existingDetailAttachments.removeWhere((a) {
+            final type = (a['type'] ?? a['id'] ?? '').toString().toUpperCase();
+            return type == 'IDENTITY_DOCUMENT_BACK';
+          });
+          break;
+        case 'tax_plate':
+          _taxPlateFile = null;
+          _taxPlateFileId = null;
+          _existingDetailAttachments.removeWhere((a) {
+            final type = (a['type'] ?? a['id'] ?? '').toString().toUpperCase();
+            return type == 'TAX_PLATE';
+          });
+          break;
       }
     });
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1499,14 +1923,29 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  /// Web kaydı `PROFESSIONAL_COMPOTENCE_CERTIFICATE` ya da Türkçe açıklama olabilir.
+  bool _isProfessionalCertificate(String raw) {
+    final type = raw
+        .toUpperCase()
+        .replaceAll('İ', 'I')
+        .replaceAll('İ', 'I');
+    return type.contains('PROFESSIONAL') ||
+        type.contains('COMPOTENCE') ||
+        type.contains('COMPETENCE') ||
+        type.contains('YETERLILIK') ||
+        type.contains('MESLEKI');
+  }
+
   // Helper: Check if document exists (new file or existing file ID)
   bool _hasDocument(String documentType) {
     switch (documentType) {
       case 'diploma':
         return _diplomaFile != null || 
                (_diplomaFileId != null && _diplomaFileId!.isNotEmpty) ||
-               _existingDetailAttachments.any((a) =>
-                   (a['type'] ?? a['id'] ?? '').toString().toUpperCase().contains('DIPLOMA'));
+               _existingDetailAttachments.any((a) {
+                 final type = (a['type'] ?? a['id'] ?? '').toString().toUpperCase();
+                 return type.contains('DIPLOMA') || type.contains('GRADUATION');
+               });
       case 'criminal_record':
         return _criminalRecordFile != null || 
                (_criminalRecordFileId != null && _criminalRecordFileId!.isNotEmpty) ||
@@ -1515,14 +1954,29 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
       case 'professional_certificate':
         return _professionalCertificateFile != null || 
                (_professionalCertificateFileId != null && _professionalCertificateFileId!.isNotEmpty) ||
-               _existingDetailAttachments.any((a) =>
-                   (a['type'] ?? a['id'] ?? '').toString().toUpperCase().contains('PROFESSIONAL'));
+               _existingDetailAttachments.any((a) => _isProfessionalCertificate(
+                 [
+                   a['type'],
+                   a['id'],
+                   a['type_description'],
+                   a['description'],
+                 ].where((part) => part != null).join(' '),
+               ));
       case 'real_estate_permit':
         return _realEstatePermitFile != null || 
                (_realEstatePermitFileId != null && _realEstatePermitFileId!.isNotEmpty) ||
                _existingDetailAttachments.any((a) =>
                    (a['type'] ?? a['id'] ?? '').toString().toUpperCase().contains('REAL_ESTATE') ||
                    (a['type'] ?? a['id'] ?? '').toString().toUpperCase().contains('PERMIT'));
+      case 'identity_front':
+        return _identityFrontFile != null ||
+            (_identityFrontFileId != null && _identityFrontFileId!.isNotEmpty);
+      case 'identity_back':
+        return _identityBackFile != null ||
+            (_identityBackFileId != null && _identityBackFileId!.isNotEmpty);
+      case 'tax_plate':
+        return _taxPlateFile != null ||
+            (_taxPlateFileId != null && _taxPlateFileId!.isNotEmpty);
       default:
         return false;
     }
@@ -1544,6 +1998,15 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
         break;
       case 'real_estate_permit':
         fileId = _realEstatePermitFileId;
+        break;
+      case 'identity_front':
+        fileId = _identityFrontFileId;
+        break;
+      case 'identity_back':
+        fileId = _identityBackFileId;
+        break;
+      case 'tax_plate':
+        fileId = _taxPlateFileId;
         break;
     }
     
@@ -1567,14 +2030,30 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
       case 'real_estate_permit':
         typePattern = 'REAL_ESTATE';
         break;
+      case 'identity_front':
+        typePattern = 'IDENTITY_DOCUMENT_FRONT';
+        break;
+      case 'identity_back':
+        typePattern = 'IDENTITY_DOCUMENT_BACK';
+        break;
+      case 'tax_plate':
+        typePattern = 'TAX_PLATE';
+        break;
     }
     
     if (typePattern.isNotEmpty) {
       try {
         final attachment = _existingDetailAttachments.firstWhere((a) {
           final type = (a['type'] ?? a['id'] ?? '').toString().toUpperCase();
-          return type.contains(typePattern) || 
-                 (documentType == 'real_estate_permit' && type.contains('PERMIT'));
+          if (documentType == 'diploma') {
+            return type.contains('DIPLOMA') || type.contains('GRADUATION');
+          }
+          if (documentType == 'professional_certificate') {
+            return _isProfessionalCertificate(type);
+          }
+          return type.contains(typePattern) ||
+              (documentType == 'real_estate_permit' &&
+                  (type.contains('PERMIT') || type.contains('AUTHORIZATION')));
         });
         return attachment['attachment'] ?? attachment['s3Id'] ?? attachment['fileId']?.toString();
       } catch (_) {
@@ -1585,12 +2064,53 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
     return null;
   }
 
+  Widget _optionalDocField(String label, String documentType) {
+    final fileId = _getDocumentFileId(documentType);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF3A4352),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (fileId != null && fileId.isNotEmpty)
+          _buildExistingDocument(documentType, fileId)
+        else
+          OutlinedButton.icon(
+            onPressed: () => _pickDocument(documentType),
+            icon: const Icon(Icons.upload_file_outlined, color: Color(0xFFE53935)),
+            label: const Text("Dosya seçiniz"),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF3A4352),
+              side: const BorderSide(color: Color(0xFFE5E7EB)),
+              minimumSize: const Size.fromHeight(48),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            ),
+          ),
+      ],
+    );
+  }
+
   // Helper: Build existing document display widget
   Widget _buildExistingDocument(String documentType, String fileId, {String? errorText}) {
-    final documentName = documentType == 'diploma' ? 'Diploma' :
-                        documentType == 'criminal_record' ? 'Adli Sicil Kaydı' :
-                        documentType == 'professional_certificate' ? 'Mesleki Yeterlilik Belgesi' :
-                        'Taşınmaz Ticari Yetki Belgesi';
+    final documentName = documentType == 'diploma'
+        ? 'Diploma'
+        : documentType == 'criminal_record'
+            ? 'Adli Sicil Kaydı'
+            : documentType == 'professional_certificate'
+                ? 'Mesleki Yeterlilik Belgesi'
+                : documentType == 'identity_front'
+                    ? 'Nüfus Cüzdanı Ön'
+                    : documentType == 'identity_back'
+                        ? 'Nüfus Cüzdanı Arka'
+                        : documentType == 'tax_plate'
+                            ? 'Vergi Levhası'
+                            : 'Taşınmaz Ticari Yetki Belgesi';
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1789,6 +2309,7 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
               orElse: () => _educations.first,
             );
 
+      _stampInvoiceIntoNested();
       // Create ContactApiModel from form data
       final contact = ContactApiModel(
         contactNo: 0,
@@ -1806,7 +2327,7 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
         taxOffice: null,
         nationality: 'TR',
         sex: _selectedGender == 'M' ? 1 : _selectedGender == 'F' ? 2 : null,
-        eMail: _emailController.text,
+        eMail: _emailForSave(),
         tel: _phoneController.text,
         status: _formModel.isActive ? 1 : 0,
         updatedAt: DateTime.now().toIso8601String(),
@@ -1831,16 +2352,16 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
         marketingCommunicationPermission: _formModel.campaignConsent,
         address:
             _addressController.text.isEmpty ? null : _addressController.text,
-        district: _formModel.selectedDistrict,
-        city: _formModel.selectedCity,
+        district: _matchedDistrict()?.code.toString() ?? _formModel.selectedDistrict,
+        city: _matchedProvince()?.code.toString() ?? _formModel.selectedCity,
         country: 'TR',
         postCode: _postCodeController.text.isEmpty ? null : _postCodeController.text,
         addressSource: null,
-        provinceCode: null,
+        provinceCode: _matchedProvince()?.code.toString(),
         provinceName: _formModel.selectedCity,
-        districtCode: null,
+        districtCode: _matchedDistrict()?.code.toString(),
         districtName: _formModel.selectedDistrict,
-        quarterCode: null,
+        quarterCode: _matchedQuarter()?.code.toString(),
         quarterName: _formModel.selectedNeighborhood,
         connectedContact: _selectedConnectedPersonId != null 
             ? int.tryParse(_selectedConnectedPersonId!) 
@@ -1860,11 +2381,12 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
         coverLetter: _coverLetterController.text.isEmpty ? null : _coverLetterController.text,
         references: _referencesController.text.isEmpty ? null : _referencesController.text,
         aboutMe: _coverLetterController.text.isEmpty ? null : _coverLetterController.text,
-        birthPlaceCode: null,
+        birthPlaceCode: _matchedBirthProvince()?.code,
         birthPlaceName: _selectedBirthPlace,
-        maritalStatus: _selectedMaritalStatus,
+        maritalStatus: _maritalApi(_selectedMaritalStatus),
         size: _selectedBodySize,
         isForeignNationality: _isForeignNational,
+        preservedNestedDetail: _preservedNestedDetail,
       );
 
       // Web'deki gibi files array'i oluştur
@@ -1877,7 +2399,7 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
       }
       if (_diplomaFileId != null && _diplomaFileId!.isNotEmpty) {
         files.add({
-          'id': 'DIPLOMA',
+          'id': 'GRADUATION_DOCUMENT',
           's3Id': _diplomaFileId,
         });
       }
@@ -1889,14 +2411,32 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
       }
       if (_professionalCertificateFileId != null && _professionalCertificateFileId!.isNotEmpty) {
         files.add({
-          'id': 'PROFESSIONAL_CERTIFICATE',
+          'id': 'PROFESSIONAL_COMPOTENCE_CERTIFICATE',
           's3Id': _professionalCertificateFileId,
         });
       }
       if (_realEstatePermitFileId != null && _realEstatePermitFileId!.isNotEmpty) {
         files.add({
-          'id': 'REAL_ESTATE_PERMIT',
+          'id': 'REAL_ESTATE_TRADE_AUTHORIZATION_CERTIFICATE',
           's3Id': _realEstatePermitFileId,
+        });
+      }
+      if (_identityFrontFileId != null && _identityFrontFileId!.isNotEmpty) {
+        files.add({
+          'id': 'IDENTITY_DOCUMENT_FRONT',
+          's3Id': _identityFrontFileId,
+        });
+      }
+      if (_identityBackFileId != null && _identityBackFileId!.isNotEmpty) {
+        files.add({
+          'id': 'IDENTITY_DOCUMENT_BACK',
+          's3Id': _identityBackFileId,
+        });
+      }
+      if (_taxPlateFileId != null && _taxPlateFileId!.isNotEmpty) {
+        files.add({
+          'id': 'TAX_PLATE',
+          's3Id': _taxPlateFileId,
         });
       }
 
@@ -1942,6 +2482,33 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
       final newUploadTypes = attachments.map((a) => (a['type'] ?? '').toString().toUpperCase()).toSet();
       final filteredExisting = _existingDetailAttachments.where((e) {
         final t = (e['type'] ?? e['id'] ?? '').toString().toUpperCase();
+        if (t == 'IDENTITY_DOCUMENT' &&
+            _identityFrontFileId != null &&
+            _identityFrontFileId!.isNotEmpty) {
+          return false;
+        }
+        if (_isProfessionalCertificate(t) &&
+            newUploadTypes.any(_isProfessionalCertificate)) {
+          return false;
+        }
+        if ((t.contains('DIPLOMA') || t.contains('GRADUATION')) &&
+            newUploadTypes.any((n) =>
+                n.contains('DIPLOMA') || n.contains('GRADUATION'))) {
+          return false;
+        }
+        if ((t.contains('REAL_ESTATE') ||
+                t.contains('PERMIT') ||
+                t.contains('AUTHORIZATION')) &&
+            newUploadTypes.any((n) =>
+                n.contains('REAL_ESTATE') ||
+                n.contains('PERMIT') ||
+                n.contains('AUTHORIZATION'))) {
+          return false;
+        }
+        if ((t.contains('TAX_PLATE') || t.contains('VERGI')) &&
+            newUploadTypes.any((n) => n.contains('TAX_PLATE') || n.contains('VERGI'))) {
+          return false;
+        }
         return !newUploadTypes.contains(t);
       }).map((e) => Map<String, dynamic>.from(e)).toList();
       requestBody['detail']['attachments'] = [...filteredExisting, ...attachments];
@@ -2549,49 +3116,27 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                       controller: _phoneController,
                       decoration: _buildModernInputDecoration(
                         labelText: "Cep Telefonu *",
+                        hintText: "+90 (555) 000-0000",
                         prefixIcon: Icons.phone_outlined,
-                        prefixText: "+90 ",
                         isRequired: true,
                         errorText: _phoneError,
                       ),
                       cursorColor: const Color(0xFFE53935),
                       keyboardType: TextInputType.phone,
                       onChanged: (value) {
-                        if (value.isNotEmpty && value.length >= 10 && _phoneError != null) {
+                        if (_subscriberDigits(value).length == 10 && _phoneError != null) {
                           setState(() {
                             _phoneError = null;
                           });
                         }
                       },
                       inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(10),
                         TextInputFormatter.withFunction((oldValue, newValue) {
-                          String newText = newValue.text;
-                          if (newText.length <= 3) {
-                            return newValue;
-                          } else if (newText.length <= 6) {
-                            return newValue.copyWith(
-                              text:
-                                  '${newText.substring(0, 3)} ${newText.substring(3)}',
-                              selection: TextSelection.collapsed(
-                                  offset: newText.length + 1),
-                            );
-                          } else if (newText.length <= 8) {
-                            return newValue.copyWith(
-                              text:
-                                  '${newText.substring(0, 3)} ${newText.substring(3, 6)} ${newText.substring(6)}',
-                              selection: TextSelection.collapsed(
-                                  offset: newText.length + 2),
-                            );
-                          } else {
-                            return newValue.copyWith(
-                              text:
-                                  '${newText.substring(0, 3)} ${newText.substring(3, 6)} ${newText.substring(6, 8)} ${newText.substring(8)}',
-                              selection: TextSelection.collapsed(
-                                  offset: newText.length + 3),
-                            );
-                          }
+                          final text = _formatPhoneForDisplay(newValue.text);
+                          return TextEditingValue(
+                            text: text,
+                            selection: TextSelection.collapsed(offset: text.length),
+                          );
                         }),
                       ],
                     ),
@@ -2603,13 +3148,20 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                       decoration: _buildModernInputDecoration(
                         labelText: "E-posta *",
                         prefixIcon: Icons.email_outlined,
+                        suffixText: _companyEmail ? _companyEmailDomain : null,
                         isRequired: true,
                         errorText: _emailError,
                       ),
                       cursorColor: const Color(0xFFE53935),
                       keyboardType: TextInputType.emailAddress,
                       onChanged: (value) {
-                        if (value.isNotEmpty && RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value) && _emailError != null) {
+                        final usesOwnDomain = value.contains('@');
+                        if (usesOwnDomain != !_companyEmail) {
+                          setState(() => _companyEmail = !usesOwnDomain);
+                        }
+                        if (_emailForSave().isNotEmpty &&
+                            RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(_emailForSave()) &&
+                            _emailError != null) {
                           setState(() {
                             _emailError = null;
                           });
@@ -2618,6 +3170,12 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                     ),
 
                     const SizedBox(height: 16),
+                    if (_profileImage != null ||
+                        (_profileImageId != null && _profileImageId!.isNotEmpty))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Center(child: _buildProfilePreview(88)),
+                      ),
                     // Fotoğraf
                     const Text("Fotoğraf *", 
                         style: TextStyle(
@@ -2639,55 +3197,9 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                         child: Row(
                           children: [
                             // Fotoğraf önizlemesi: seçilen dosya veya yüklenen S3 görseli
-                            if (_profileImage != null)
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.file(
-                                  _profileImage!,
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                ),
-                              )
-                            else if (_profileImageId != null && _profileImageId!.isNotEmpty && ImageUtils.isValidS3Id(_profileImageId))
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  ImageUtils.getProfileImageUrl(_profileImageId),
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return SizedBox(
-                                      width: 48,
-                                      height: 48,
-                                      child: Center(
-                                        child: SizedBox(
-                                          width: 20,
-                                          height: 20,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            value: loadingProgress.expectedTotalBytes != null
-                                                ? loadingProgress.cumulativeBytesLoaded / (loadingProgress.expectedTotalBytes ?? 1)
-                                                : null,
-                                            color: const Color(0xFFE53935),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  errorBuilder: (_, __, ___) => Container(
-                                    width: 48,
-                                    height: 48,
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[200],
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(Icons.person, color: Colors.grey, size: 28),
-                                  ),
-                                ),
-                              )
+                            if (_profileImage != null ||
+                                (_profileImageId != null && _profileImageId!.isNotEmpty))
+                              _buildProfilePreview(56)
                             else
                               Container(
                                 width: 48,
@@ -2699,7 +3211,8 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                                 ),
                                 child: const Icon(Icons.add_photo_alternate_outlined, color: Colors.grey, size: 24),
                               ),
-                            if (_profileImage != null || (_profileImageId != null && _profileImageId!.isNotEmpty && ImageUtils.isValidS3Id(_profileImageId)))
+                            if (_profileImage != null ||
+                                (_profileImageId != null && _profileImageId!.isNotEmpty))
                               const SizedBox(width: 12),
                             Expanded(
                               child: Text(
@@ -2767,8 +3280,8 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                         padding: const EdgeInsets.only(top: 8, left: 4),
                         child: Text(
                           "Yüksek çözünürlüklü, profesyonel çekim, net ışıklandırma ve beyaz/açık renk arka plan kullanılmalıdır",
-                          style: TextStyle(
-                            color: _muted,
+                          style: const TextStyle(
+                            color: Color(0xFFE53935),
                             fontSize: 12,
                         ),
                       ),
@@ -3255,64 +3768,6 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                       ),
                     ),
 
-                    const SizedBox(height: 16),
-                    // Uyruk (Opsiyonel)
-                    const Text("Uyruk (Opsiyonel)",
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF3A4352))),
-                    const SizedBox(height: 8),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: _fill,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: _line, 
-                          width: 1.5
-                        ),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: _isLoadingRefData
-                            ? const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                                child: Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    ),
-                                    SizedBox(width: 12),
-                                    Text("Yükleniyor...", style: TextStyle(color: Colors.grey)),
-                                  ],
-                                ),
-                              )
-                            : DropdownButton<String>(
-                                dropdownColor: Colors.white,
-                                isExpanded: true,
-                                value: _countries.isNotEmpty ? _countries.first.name : null,
-                                hint: const Padding(
-                                  padding: EdgeInsets.only(left: 8),
-                                  child: Text(
-                                    "Seçiniz",
-                                    style: TextStyle(color: Colors.grey),
-                                  ),
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 1),
-                                items: _countries.map((RefCountryModel country) {
-                                  return DropdownMenuItem<String>(
-                                    value: country.name,
-                                    child: Text(country.name, style: const TextStyle(fontSize: 14)),
-                                  );
-                                }).toList(),
-                                onChanged: (value) {
-                                  // Opsiyonel - herhangi bir validation yok
-                                },
-                              ),
-                      ),
-                    ),
-
                     ],
                     ),
                     _section(
@@ -3616,22 +4071,6 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                     ),
 
                     const SizedBox(height: 20),
-                    // Posta Kodu
-                    TextFormField(
-                      controller: _postCodeController,
-                      decoration: _buildModernInputDecoration(
-                        labelText: "Posta Kodu (Opsiyonel)",
-                        prefixIcon: Icons.local_post_office_outlined,
-                      ),
-                      cursorColor: const Color(0xFFE53935),
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                        LengthLimitingTextInputFormatter(5),
-                      ],
-                    ),
-
-                    const SizedBox(height: 20),
                     // Adres
                     TextFormField(
                       controller: _addressController,
@@ -3655,6 +4094,53 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                     ],
                     ),
                     _section(
+                      title: "Fatura Bilgileri",
+                      icon: Icons.receipt_long_outlined,
+                      children: [
+                        TextFormField(
+                          controller: _invoiceTitleController,
+                          decoration: _buildModernInputDecoration(labelText: "Fatura Ünvanı"),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _invoiceTaxOfficeController,
+                          decoration: _buildModernInputDecoration(labelText: "Vergi Dairesi"),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _invoiceTaxNumberController,
+                          keyboardType: TextInputType.number,
+                          decoration: _buildModernInputDecoration(labelText: "Vergi Numarası"),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _invoiceCountryController,
+                          decoration: _buildModernInputDecoration(labelText: "Fatura Ülkesi"),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _invoiceCityController,
+                          decoration: _buildModernInputDecoration(labelText: "Fatura İli"),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _invoiceDistrictController,
+                          decoration: _buildModernInputDecoration(labelText: "Fatura İlçesi"),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _invoiceQuarterController,
+                          decoration: _buildModernInputDecoration(labelText: "Fatura Mahallesi"),
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _invoiceAddressController,
+                          maxLines: 3,
+                          decoration: _buildModernInputDecoration(labelText: "Fatura Adresi"),
+                        ),
+                      ],
+                    ),
+                    _section(
                       title: "Sosyal medya",
                       icon: Icons.share_outlined,
                       children: [
@@ -3664,7 +4150,6 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                       decoration: _buildModernInputDecoration(
                         labelText: "Instagram (Opsiyonel)",
                         prefixIcon: Icons.camera_alt_outlined,
-                        prefixText: "@",
                       ),
                       cursorColor: const Color(0xFFE53935),
                     ),
@@ -3687,7 +4172,6 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                       decoration: _buildModernInputDecoration(
                         labelText: "X (Opsiyonel)",
                         prefixIcon: Icons.alternate_email_outlined,
-                        prefixText: "@",
                       ),
                       cursorColor: const Color(0xFFE53935),
                     ),
@@ -3744,7 +4228,9 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                             : DropdownButton<String>(
                                 dropdownColor: Colors.white,
                                 isExpanded: true,
-                                value: _formModel.selectedProfession,
+                                value: _professions.any((p) => p.description == _formModel.selectedProfession)
+                                    ? _formModel.selectedProfession
+                                    : null,
                                 hint: const Padding(
                                   padding: EdgeInsets.only(left: 8),
                                   child: Text(
@@ -3833,7 +4319,9 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                             : DropdownButton<String>(
                                 dropdownColor: Colors.white,
                                 isExpanded: true,
-                                value: _formModel.selectedEducation,
+                                value: _educations.any((e) => e.description == _formModel.selectedEducation)
+                                    ? _formModel.selectedEducation
+                                    : null,
                                 hint: Padding(
                                   padding: const EdgeInsets.only(left: 8),
                                   child: Text(
@@ -4005,6 +4493,17 @@ class _MyOfficeEditScreenState extends State<MyOfficeEditScreen> {
                       title: "Belgeler",
                       icon: Icons.folder_open_outlined,
                       children: [
+                    TextFormField(
+                      controller: _ttbsController,
+                      decoration: _buildModernInputDecoration(labelText: "TTBS Numarası"),
+                    ),
+                    const SizedBox(height: 20),
+                    _optionalDocField("Nüfus Cüzdanı Ön", "identity_front"),
+                    const SizedBox(height: 20),
+                    _optionalDocField("Nüfus Cüzdanı Arka", "identity_back"),
+                    const SizedBox(height: 20),
+                    _optionalDocField("Vergi Levhası", "tax_plate"),
+                    const SizedBox(height: 20),
                     // Diploma
                     const Text("Diploma (Opsiyonel)", style: TextStyle(
                             fontSize: 13,
